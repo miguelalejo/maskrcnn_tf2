@@ -1,241 +1,513 @@
-# Mask R-CNN for Object Detection and Segmentation
+## Mask-RCNN in Tensorflow v2  ##
+
+This repository is based on [matterport](https://github.com/matterport/Mask_RCNN) Mask-RCNN model implementation. The
+main things about the model were added from the original repository. The repo is an attempt to make Mask-RCNN model more
+transparent to researchers and more applicable in terms of inference optimization. Besides, new backbones were added in
+order to have a choice in balance between accuracy and speed, to make model more task-specific.
+
+### Supported Tensorflow versions
+
+* tensorflow v2.2.0
+
+### Supported backbones ###
+
+* ResNet 18
+* ResNet 34
+* ResNet 50
+* ResNet 101
+* MobileNet
+* MobileNet_V2
+* EfficientNetB0
+* EfficientNetB1
+* EfficientNetB2
+* EfficientNetB3
+
+## Getting started
+
+### Environment setup
+
+      $ conda create -n tf2.2 python=3.7
+      $ conda activate tf2.2
+      $ pip install -r requirements.txt
+
+### Prepare dataset class and data augmentation
+
+1. There is a general config about Mask-RCNN building and training in `./src/common/config.py` represented as a dict.
+   Prepare it for a specific task (`CLASS_DICT` dictionary for class ids and names, other parameters are in `CONFIG`
+   dictionary.)
+
+2. Configure your dataset class. In the basic example we use general dataset class named `SegmentationDataset` for
+   dealing with masks made in VGG Image Annotator.\
+   In `./src/samples/balloon` you can inspect prepared `BalloonDataset` which inherits `SegmentationDataset` and process
+   balloon image samples from the original repository.\
+   In `./src/samples/coco` you can inspect prepared `CocoDataset` for MS COCO dataset.\
+   Any prepared dataset class can be passed to DataLoader in  `./src/preprocess/preprocess.py` which generates batches.\
+   You can also configure your own data augmentation. The default training augmentation is
+   in `./src/preprocess/augmentation.py`
+   in `get_training_augmentation` function. The default augmentation pipeline is based
+   on [albumentations](https://github.com/albumentations-team/albumentations) library.
+
+   See also:
+    * `./src/notebooks/example_data_loader_balloon.ipynb`
+    * `./src/notebooks/example_data_loader_coco.ipynb`
+
+### Training
+
+Basic example:
+
+      import tensorflow as tf
+      from preprocess import preprocess
+      from preprocess import augmentation as aug
+      from training import train_model
+      from model import mask_rcnn_functional
+      from common.utils import tf_limit_gpu_memory
+      from common.config import CONFIG
+      
+      # Limit GPU memory for tensorflow container
+      tf_limit_gpu_memory(tf, 4500)
+      
+      # Update info about classes in your dataset
+      CONFIG.update({'class_dict': { },
+                     'num_classes': ,
+                    },
+                   )
+      CONFIG.update({'meta_shape': (1 + 3 + 3 + 4 + 1 + CONFIG['num_classes']),})
+      
+      
+      # Init Mask-RCNN model
+      model = mask_rcnn_functional(config=CONFIG)
+      
+      # Init training and validation datasets
+      base_dir=os.getcwd().replace('src', 'dataset_folder')
+      train_dir = os.path.join(base_dir, 'train')
+      val_dir = os.path.join(base_dir, 'val')
+      
+      train_dataset = preprocess.SegmentationDataset(images_dir=train_dir,
+                                                    classes_dict=CONFIG['class_dict'],
+                                                    augmentation=aug.get_training_augmentation(
+                                                        image_size=CONFIG['img_size'],
+                                                        normalize=CONFIG['normalization']
+                                                    ),
+                                                    **CONFIG
+                                                    )
+      val_dataset = preprocess.SegmentationDataset(images_dir=val_dir,
+                                                  classes_dict=CONFIG['class_dict'],
+                                                  augmentation=aug.get_validation_augmentation(
+                                                      image_size=CONFIG['img_size'],
+                                                      normalize=CONFIG['normalization']
+                                                  ),
+                                                  **CONFIG
+                                              )
+      # train_model function includes dataset and dataloader initialization, callbacks configuration, 
+      # a list of losses definition and final model compiling with optimizer defined in CONFIG.
+      train_model(model, 
+                 train_dataset=train_dataset,
+                 val_dataset=val_dataset,
+                 config=CONFIG, 
+                 weights_path=None)
+
+Balloon dataset example:
+
+      import os
+      os.chdir('..')
+      import tensorflow as tf
+      
+      from samples.balloon import balloon
+      from preprocess import preprocess
+      from preprocess import augmentation as aug
+      from training import train_model
+      from model import mask_rcnn_functional
+      from common.utils import tf_limit_gpu_memory
+      
+      # Limit GPU memory for tensorflow container
+      tf_limit_gpu_memory(tf, 4500)
+      
+      from common.config import CONFIG
+      CONFIG.update({'class_dict': {'balloon': 1, 'background': 0},
+                     'num_classes': 2,
+                     'epochs': 30,
+                    },
+                   )
+      CONFIG.update({'meta_shape': (1 + 3 + 3 + 4 + 1 + CONFIG['num_classes']),})
+      
+      # Init Mask-RCNN model
+      model = mask_rcnn_functional(config=CONFIG)
+      
+      # Init training and validation datasets
+      base_dir = os.getcwd().replace('src', 'balloon')
+      train_dir = os.path.join(base_dir, 'train')
+      val_dir = os.path.join(base_dir, 'val')
+      
+      train_dataset = balloon.BalloonDataset(images_dir=train_dir,
+                                            class_key='object',
+                                            classes_dict=CONFIG['class_dict'],
+                                            augmentation=aug.get_training_augmentation(
+                                                image_size=CONFIG['img_size'],
+                                                normalize=CONFIG['normalization']
+                                            ),
+                                            json_annotation_key=None,
+                                            **CONFIG
+                                                 )
+      
+      val_dataset = balloon.BalloonDataset(images_dir=val_dir,
+                                          class_key='object',
+                                          classes_dict=CONFIG['class_dict'],
+                                          augmentation=aug.get_validation_augmentation(
+                                              image_size=CONFIG['img_size'],
+                                              normalize=CONFIG['normalization']
+                                          ),
+                                          json_annotation_key=None,
+                                          **CONFIG
+                                         )
+      
+      # train_model function includes dataset and dataloader initialization, callbacks configuration, 
+      # a list of losses definition and final model compiling with optimizer defined in CONFIG.
+      train_model(model, 
+            train_dataset=train_dataset,
+            val_dataset=val_dataset,
+            config=CONFIG, 
+            weights_path=None)
+
+See `./src/notebooks/example_training_balloon.ipynb`.
+
+MS COCO dataset example:
+
+      import os
+      os.chdir('..')
+      import tensorflow as tf
+      
+      from samples.coco import coco
+      from preprocess import preprocess
+      from preprocess import augmentation as aug
+      from training import train_model
+      from model import mask_rcnn_functional
+      from common.utils import tf_limit_gpu_memory
+
+      # Limit GPU memory for tensorflow container
+      tf_limit_gpu_memory(tf, 4500)
+
+      from common.config import CONFIG
+      CONFIG.update(coco.COCO_CONFIG)
+
+      # Init Mask-RCNN model
+      model = mask_rcnn_functional(config=CONFIG)
+      
+      # You can also download dataset with auto_download=True argument
+      # It will be downloaded and unzipped in dataset_dir
+      base_dir = r'<COCO_PATH>/coco2017' 
+      train_dir = os.path.join(base_dir, 'train')
+      val_dir = os.path.join(base_dir, 'val')
+
+      train_dataset = coco.CocoDataset(dataset_dir=train_dir,
+                                       subset='train',
+                                       year=2017,
+                                       auto_download=False,
+                                     
+                                       # SegmentationDataset necessary parent attributes
+                                       augmentation=aug.get_training_augmentation(
+                                                     image_size=CONFIG['img_size'],
+                                                     normalize=CONFIG['normalization']
+                                       ),
+                                       **CONFIG
+                                      )
+      
+      val_dataset = coco.CocoDataset(dataset_dir=val_dir,
+                                     subset='val',
+                                     year=2017,
+                                     auto_download=False,
+                                     
+                                     # SegmentationDataset necessary parent attributes
+                                     augmentation=aug.get_validation_augmentation(
+                                                 image_size=CONFIG['img_size'],
+                                                 normalize=CONFIG['normalization']
+                                     ),
+                                     **CONFIG
+                                    )
+
+      train_dataloader = preprocess.DataLoader(train_dataset,
+                                               shuffle=True,
+                                               name='train',
+                                               **CONFIG
+                                              )
+      val_dataloader = preprocess.DataLoader(val_dataset,
+                                             shuffle=False,
+                                             name='val',
+                                             **CONFIG
+                                            )
+
+      train_model(model, 
+                  train_dataset=train_dataset,
+                  val_dataset=val_dataset,
+                  config=CONFIG, 
+                  weights_path=None)
+
+See `./src/notebooks/example_training_coco.ipynb`.
+
+4. Logs folder with weights and scalars will appear in `./src/` Monitor training with tensorboard tool:
+
+        $ tensorboard --log_dir=./src/logs
+
+### Inference
+
+See inference example in `./src/notebooks/example_inference_tf_onnx_trt_balloon.ipynb`
+
+### Inference optimization
+
+The project suggests a straightforward way of __Mask-RCNN inference optimization__ on x86_64 architecture and also on
+NVIDIA Jetson devices (AArch64). Here you do not need to fix .uff graph and then optimize it with TensorRT. The model
+optimizing way here is based on pure .onnx graph with only one prepared .onnx graph modification function for TensorRT.
+You can inspect optimization steps with python in `example_tensorflow_to_onnx_tensorrt_balloon.ipynb`.
+
+Optimization steps:
+
+1. Initialize your model in inference mode and load its weights. Thus, your model won't include unnecessary layers that
+   is used in training mode.
+2. Convert your tensorflow.keras model to .onnx with `tf2onnx`.
+
+__Inference with onnxruntime:__  
+From this step, you can use generated .onnx graph in `onnxruntime` and `onnxruntime-gpu` inference.
+
+__Inference with TensorRT:__
+
+3. Change your .onnx graph made on step 2. by including TensorRT-implemented Mask-RCNN layers with
+   `onnx-graphsurgeon` library. This step is implemented in `modify_onnx_model` function.
+4. Use TensorRT optimization for a modified .onnx-graph to prepare TensoRT-engine:
+
+#### Mask-RCNN with TensorRT >=7.2:
+
+1. Get your TensorRT path: <TENSORRT_PATH>
+2. Make sure that the following path in ~/.bashrc:
+
+   `export LD_LIBRARY_PATH=<TENSORRT_PATH>/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}`
+
+   `export LD_LIBRARY_PATH=<TENSORRT_PATH>/targets/x86_64-linux-gnu/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}`
+
+   Easy to edit example:
+
+   `export LD_LIBRARY_PATH=/home/user/TensorRT-7.2.3.4/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}`
+
+   `export LD_LIBRARY_PATH=/home/user/TensorRT-7.2.3.4/targets/x86_64-linux-gnu/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}`
+
+3. Generate TensorRT-engine in terminal with trtexec:
+    * Basically, terminal does not recognize trtexec command. You can add to ~/.bashrc path to trtexec with alias:
+
+      `alias trtexec='<TENSORRT_PATH>/bin/trtexec'`
+
+      For successful run `example_tensorflow_to_onnx_tensorrt_balloon.ipynb` add `TRTEXEC` to ~/.bashrc:
+
+      `export TRTEXEC='<TENSORRT_PATH>/bin/trtexec'`
+
+    * Update ~/.bashrc:
+
+      `$ source ~/.bashrc`
+
+    * Run trtexec:
+
+        * fp32:
+          `trtexec --onnx=<PATH_TO_ONNX_GRAPH> --saveEngine=<PATH_TO_TRT_ENGINE> --workspace=<WORKSPACE_SIZE> --verbose`
+        * fp16:
+          `trtexec --onnx=<PATH_TO_ONNX_GRAPH> --saveEngine=<PATH_TO_TRT_ENGINE> --fp16 --workspace=<WORKSPACE_SIZE> --verbose`
+
+Known issues:
+
+    1. `../rtSafe/cublas/cublasLtWrapper.cpp (279) - Assertion Error in getCublasLtHeuristic: 0 (cublasStatus == CUBLAS_STATUS_SUCCESS)`
+       
+        * Possible cause: cuda and TensorRT versions mismatch;
+        * Possible workaround if error still exists - remove cublasLt from tacticSources:
+            # fp32:
+              `trtexec --onnx=<PATH_TO_ONNX_GRAPH> --saveEngine=<PATH_TO_TRT_ENGINE> --tacticSources=-cublasLt,+cublas --workspace=<WORKSPACE_SIZE> --verbose`
+            # fp16:
+               `trtexec --onnx=<PATH_TO_ONNX_GRAPH> --saveEngine=<PATH_TO_TRT_ENGINE> --tacticSources=-cublasLt,+cublas --fp16 --workspace=<WORKSPACE_SIZE> --verbose`
+
+#### Mask-RCNN with NVIDIA Jetson devices. TensorRT=7.1.3:
+
+This [NVIDIA doc](https://docs.nvidia.com/metropolis/TLT/tlt-user-guide/text/object_detection/yolo_v4.html#tensorrt-oss-on-jetson-arm64)
+about TensorRT OSS on Jetson was very helpful for the manual:
+
+1. Update cmake on Jetson Ubuntu 18.04 OS:
+
+         $ sudo apt remove --purge --auto-remove cmake
+         $ wget https://github.com/Kitware/CMake/releases/download/v3.13.5/cmake-3.13.5.tar.gz
+         $ tar xvf cmake-3.13.5.tar.gz
+         $ cd cmake-3.13.5/
+         $ ./configure
+         $ make -j$(nproc)
+         $ sudo make install
+         $ sudo ln -s /usr/local/bin/cmake /usr/bin/cmake
+
+2. Clone TensorRT repository to build necessary Mask-RCNN plugins for custom layers:
+
+         $ git clone https://github.com/NVIDIA/TensorRT.git
+         $ cd TensorRT/ && git checkout release/7.1 && git pull
+         $ git submodule update --init --recursive
+         $ export TRT_SOURCE=`pwd`
+         $ mkdir -p build && cd build
+
+3. Open  `TensorRT/plugin/proposalLayerPlugin/mrcnn_config.h` and change Mask-RCNN configs according to the trained
+   model configuration that is stored in
+   `src/common/config.py`
+
+4. Build nvinfer_plugin:
+
+        $ /usr/local/bin/cmake .. -DGPU_ARCHS=72  -DTRT_LIB_DIR=/usr/lib/aarch64-linux-gnu/ -DCMAKE_C_COMPILER=/usr/bin/gcc -DTRT_BIN_DIR=`pwd`/out
+        $ make nvinfer_plugin -j$(nproc)
+
+5. Copy the `libnvinfer_plugin.so.7.1.3` output to the library folder. Don't forget to backup the original build:
+
+        $ mkdir ~/backups
+        $ sudo mv /usr/lib/aarch64-linux-gnu/libnvinfer_plugin.so.7.1.3 ~/backups/libnvinfer_plugin.so.7.1.3.bak
+        $ sudo cp libnvinfer_plugin.so.7.1.3  /usr/lib/aarch64-linux-gnu/libnvinfer_plugin.so.7.1.3
+        # Update links
+        $ sudo ldconfig
+        # Check that links exist
+        $ ldconfig -p | grep libnvinfer
+
+6. Generate TensorRT-engine in terminal with trtexec:
+    * You can add to ~/.bashrc path to trtexec with alias if it is not known in terminal:
+
+      `alias trtexec='<TENSORRT_PATH>/bin/trtexec'`
+
+    * Update ~/.bashrc:
+
+      `$ source ~/.bashrc`
+
+    * Run trtexec:
+
+        *
+      fp32: `trtexec --onnx=<PATH_TO_ONNX_GRAPH> --saveEngine=<PATH_TO_TRT_ENGINE> --workspace=<WORKSPACE_SIZE> --verbose`
+
+        *
+      fp16: `trtexec --onnx=<PATH_TO_ONNX_GRAPH> --saveEngine=<PATH_TO_TRT_ENGINE> --fp16 --workspace=<WORKSPACE_SIZE> --verbose`
+
+See inference optimization examples in `./src/notebooks/example_tensorflow_to_onnx_tensorrt_balloon.ipynb`
+
+#### Inference speed comparison with original Mask-RCNN:
+
+Profiling with trtexec TensorRT tool with default maxBatch (1). For tests we took Mask-RCNN model with 2 classes
+including background. Note, that for comparison we used original Mask-RCNN model with ResNet101 and (1, 3, 1024, 1024)
+input shape and updated tensorflow v2 Mask-RCNN model with all supported backbones and with (1, 1024, 1024, 3), (1, 512,
+512, 3) input shapes.
+
+For original matterport Mask-RCNN we went through steps suggested in
+[sampleUffMaskRCNN](https://github.com/NVIDIA/TensorRT/tree/master/samples/opensource/sampleUffMaskRCNN#generating-uff-model)
+of official TensorRT github repository. For this model trtexec command:
+
+      $ trtexec --uff=mask_rcnn_resnet101_nchw.uff --uffInput=input_image,3,1024,1024 --output=mrcnn_detection,mrcnn_mask/Sigmoid --workspace=4096 --verbose
+
+For tensorflow v2 Mask-RCNN trtexec command:
+
+      $ trtexec --onnx=maskrcnn_<BACKBONE_NAME>_<WIDTH>_<HEIGHT>_3_trt_mod.onnx  --workspace=4096  --verbose
+      $ trtexec --onnx=maskrcnn_<BACKBONE_NAME>_<WIDTH>_<HEIGHT>_3_trt_mod.onnx  --tacticSources=-cublasLt,+cublas --workspace=4096  --verbose
+
+RTX2060:
+
+| Model           |Backbone|Precision|Mean GPU compute, ms|Mean Host latency, ms|Input shape|Total params|
+|------------------|:---:|:---:|:---:|:---:|:---:|:---:|
+|original Mask-RCNN|ResNet101|fp32|166.032|167.335|(1, 3, 1024, 1024)|64,158,584|
+|original Mask-RCNN|ResNet101|fp16|50.594|51.6662|(1, 3, 1024, 1024)|64,158,584|
+|Mask-RCNN|ResNet18|fp32|125.903|127.226|(1, 1024, 1024, 3)|32,571,861|
+|Mask-RCNN|ResNet18|fp16|46.6753|47.7547|(1, 1024, 1024, 3)|32,571,861|
+|Mask-RCNN|ResNet34|fp32|126.272|127.678|(1, 1024, 1024, 3)|42,687,445|
+|Mask-RCNN|ResNet34|fp16|49.6903|50.7716|(1, 1024, 1024, 3)|42,687,445|
+|Mask-RCNN|ResNet50|fp32|150.751|152.056|(1, 1024, 1024, 3)|45,668,309|
+|Mask-RCNN|ResNet50|fp16|54.0631|55.1411|(1, 1024, 1024, 3)|45,668,309|
+|Mask-RCNN|ResNet101|fp32|186.64|187.973|(1, 1024, 1024, 3)|64,712,661|
+|Mask-RCNN|ResNet101|fp16|58.0508|59.1242|(1, 1024, 1024, 3)|64,712,661|
+|Mask-RCNN|MobileNet|fp32|115.363|116.763|(1, 1024, 1024, 3)|24,859,596|
+|Mask-RCNN|MobileNet|fp16|40.6769|41.7582|(1, 1024, 1024, 3)|24,859,596|
+|Mask-RCNN|MobileNetV2|fp32|114.119|115.486|(1, 1024, 1024, 3)|23,958,348|
+|Mask-RCNN|MobileNetV2|fp16|43.8202|44.9006|(1, 1024, 1024, 3)|23,958,348|
+|Mask-RCNN|EfficientNetB0|fp32|138.189|139.534|(1, 1024, 1024, 3)|25,786,792|
+|Mask-RCNN|EfficientNetB0|fp16|56.5004|57.5949|(1, 1024, 1024, 3)|25,786,792|
+|Mask-RCNN|EfficientNetB1|fp32|134.059|135.417|(1, 1024, 1024, 3)|28,312,460|
+|Mask-RCNN|EfficientNetB1|fp16|60.3303|61.4217|(1, 1024, 1024, 3)|28,312,460|
+|Mask-RCNN|EfficientNetB2|fp32|135.788|137.12|(1, 1024, 1024, 3)|29,563,134|
+|Mask-RCNN|EfficientNetB2|fp16|64.0362|65.1281|(1, 1024, 1024, 3)|29,563,134|
+|Mask-RCNN|EfficientNetB3|fp32| | |(1, 1024, 1024, 3)|32,647,732|
+|Mask-RCNN|EfficientNetB3|fp16| | |(1, 1024, 1024, 3)|32,647,732|
+|Mask-RCNN|ResNet18|fp32|53.5696|53.9976|(1, 512, 512, 3)|31,786,197|
+|Mask-RCNN|ResNet18|fp16|19.6023 |19.941|(1, 512, 512, 3)|31,786,197|
+|Mask-RCNN|ResNet34|fp32|59.9331|60.4002|(1, 512, 512, 3)|41,901,781|
+|Mask-RCNN|ResNet34|fp16|23.7166|24.063|(1, 512, 512, 3)|41,901,781|
+|Mask-RCNN|ResNet50|fp32|65.8216|66.2745|(1, 512, 512, 3)|44,882,645|
+|Mask-RCNN|ResNet50|fp16|25.6267|26.0099|(1, 512, 512, 3)|44,882,645|
+|Mask-RCNN|ResNet101|fp32|77.0433|77.48|(1, 512, 512, 3)|63,926,997|
+|Mask-RCNN|ResNet101|fp16|28.1458|28.498|(1, 512, 512, 3)|63,926,997|
+|Mask-RCNN|MobileNet|fp32|52.2146|52.6336|(1, 512, 512, 3)|24,073,932|
+|Mask-RCNN|MobileNet|fp16|19.5832|19.9254|(1, 512, 512, 3)|24,073,932|
+|Mask-RCNN|MobileNetV2|fp32|52.5706|53.0006|(1, 512, 512, 3)|23,172,684|
+|Mask-RCNN|MobileNetV2|fp16|21.9402|22.2757|(1, 512, 512, 3)|23,172,684|
+|Mask-RCNN|EfficientNetB0|fp32|57.0875|57.5132|(1, 512, 512, 3)|25,001,128|
+|Mask-RCNN|EfficientNetB0|fp16|24.5434|24.8687|(1, 512, 512, 3)|25,001,128|
+|Mask-RCNN|EfficientNetB1|fp32|59.3512|59.7616|(1, 512, 512, 3)|27,526,796|
+|Mask-RCNN|EfficientNetB1|fp16|22.6646|23.0058|(1, 512, 512, 3)|27,526,796|
+|Mask-RCNN|EfficientNetB2|fp32|67.8534|68.2614|(1, 512, 512, 3)|28,777,470|
+|Mask-RCNN|EfficientNetB2|fp16|31.5452|31.8778|(1, 512, 512, 3)|28,777,470|
+|Mask-RCNN|EfficientNetB3|fp32|68.9046|69.3455|(1, 512, 512, 3)|31,862,068|
+|Mask-RCNN|EfficientNetB3|fp16|34.7724|35.0879|(1, 512, 512, 3)|31,862,068|
+
+Jetson AGX Xavier:
+
+|Model|Backbone|Precision|Mean GPU compute, ms|Mean Host latency, ms|Input shape|Total params|
+|------------------|:---:|:---:|:---:|:---:|:---:|:---:|
+|original Mask-RCNN|ResNet101|fp32|429.839|430.213|(1, 3, 1024, 1024)|64,158,584| |
+|original Mask-RCNN|ResNet101|fp16|132.519|132.902|(1, 3, 1024, 1024)|64,158,584| |
+|Mask-RCNN|ResNet18|fp32|301.87|302.241|(1, 1024, 1024, 3)|32,571,861|
+|Mask-RCNN|ResNet18|fp16|120.743|121.131|(1, 1024, 1024, 3)|32,571,861|
+|Mask-RCNN|ResNet34|fp32|326.506|326.893|(1, 1024, 1024, 3)|42,687,445|
+|Mask-RCNN|ResNet34|fp16|122.724|123.11|(1, 1024, 1024, 3)|42,687,445|
+|Mask-RCNN|ResNet50|fp32|375.936|376.317|(1, 1024, 1024, 3)|45,668,309|
+|Mask-RCNN|ResNet50|fp16|130.978|131.368|(1, 1024, 1024, 3)|45,668,309|
+|Mask-RCNN|ResNet101|fp32|470.027|470.423|(1, 1024, 1024, 3)|64,712,661|
+|Mask-RCNN|ResNet101|fp16|158.226|158.623|(1, 1024, 1024, 3)|64,712,661|
+|Mask-RCNN|MobileNet|fp32|291.818|292.217|(1, 1024, 1024, 3)|24,859,596|
+|Mask-RCNN|MobileNet|fp16|108.538|108.926|(1, 1024, 1024, 3)|24,859,596|
+|Mask-RCNN|MobileNetV2|fp32|285.315|285.688|(1, 1024, 1024, 3)|23,958,348|
+|Mask-RCNN|MobileNetV2|fp16|115.311|115.706|(1, 1024, 1024, 3)|23,958,348|
+|Mask-RCNN|EfficientNetB0|fp32|320.68|321.056|(1, 1024, 1024, 3)|25,786,792|
+|Mask-RCNN|EfficientNetB0|fp16|145.32|145.709|(1, 1024, 1024, 3)|25,786,792|
+|Mask-RCNN|EfficientNetB1|fp32|339.343|339.724|(1, 1024, 1024, 3)|28,312,460|
+|Mask-RCNN|EfficientNetB1|fp16|154.464|154.837|(1, 1024, 1024, 3)|28,312,460|
+|Mask-RCNN|EfficientNetB2|fp32|344.166|344.554|(1, 1024, 1024, 3)|29,563,134|
+|Mask-RCNN|EfficientNetB2|fp16|156.596|156.982|(1, 1024, 1024, 3)|29,563,134|
+|Mask-RCNN|EfficientNetB3|fp32| | |(1, 1024, 1024, 3)|32,647,732|
+|Mask-RCNN|EfficientNetB3|fp16| | |(1, 1024, 1024, 3)|32,647,732|
+|Mask-RCNN|ResNet18|fp32|147.313|147.43|(1, 512, 512, 3)|31,786,197|
+|Mask-RCNN|ResNet18|fp16|55.0673|55.1861|(1, 512, 512, 3)|31,786,197|
+|Mask-RCNN|ResNet34|fp32|160.904|161.024|(1, 512, 512, 3)|41,901,781|
+|Mask-RCNN|ResNet34|fp16|62.6873|62.8085|(1, 512, 512, 3)|41,901,781|
+|Mask-RCNN|ResNet50|fp32|176.807|176.925|(1, 512, 512, 3)|44,882,645|
+|Mask-RCNN|ResNet50|fp16|68.0678|68.1877|(1, 512, 512, 3)|44,882,645|
+|Mask-RCNN|ResNet101|fp32|200.177|200.301|(1, 512, 512, 3)|63,926,997|
+|Mask-RCNN|ResNet101|fp16|73.7332|73.8529|(1, 512, 512, 3)|63,926,997|
+|Mask-RCNN|MobileNet|fp32|143.371|143.492|(1, 512, 512, 3)|24,073,932|
+|Mask-RCNN|MobileNet|fp16|52.5975|52.7168|(1, 512, 512, 3)|24,073,932|
+|Mask-RCNN|MobileNetV2|fp32|143.504|143.623|(1, 512, 512, 3)|23,172,684|
+|Mask-RCNN|MobileNetV2|fp16|54.7317|54.85|(1, 512, 512, 3)|23,172,684|
+|Mask-RCNN|EfficientNetB0|fp32|157.063|157.185|(1, 512, 512, 3)|25,001,128|
+|Mask-RCNN|EfficientNetB0|fp16|66.0013|66.1224|(1, 512, 512, 3)|25,001,128|
+|Mask-RCNN|EfficientNetB1|fp32|158.944|159.064|(1, 512, 512, 3)|27,526,796|
+|Mask-RCNN|EfficientNetB1|fp16|65.623|65.7444|(1, 512, 512, 3)|27,526,796|
+|Mask-RCNN|EfficientNetB2|fp32|175.904|176.023|(1, 512, 512, 3)|28,777,470|
+|Mask-RCNN|EfficientNetB2|fp16|82.7281|82.8464| (1, 512, 512, 3)|28,777,470|
+|Mask-RCNN|EfficientNetB3|fp32|184.948|185.083|(1, 512, 512, 3)|31,862,068|
+|Mask-RCNN|EfficientNetB3|fp16|83.1854|83.3059|(1, 512, 512, 3)|31,862,068|
+
+### TODOs:
+
+--- 
+
+* [ ] NCWH support to avoid some transpose and reshape layers to increase total inference speed;
+* [ ] MS COCO weights for Mask-RCNN with all supported backbones;
+* [ ] Package maskrcnn_tf2 project;
+* [ ] Tensorflow v2.3, v2.4 support;
+* [ ] tf.keras.applications support for most backbones;
+
+---
+
+### Contributors
+
+Alexander Popkov: [@alexander-pv](https://github.com/alexander-pv)
+
+Feel free to write me about the repo issues and its update ideas.
 
-This is an implementation of [Mask R-CNN](https://arxiv.org/abs/1703.06870) on Python 3, Keras, and TensorFlow. The model generates bounding boxes and segmentation masks for each instance of an object in the image. It's based on Feature Pyramid Network (FPN) and a ResNet101 backbone.
-
-![Instance Segmentation Sample](assets/street.png)
-
-The repository includes:
-* Source code of Mask R-CNN built on FPN and ResNet101.
-* Training code for MS COCO
-* Pre-trained weights for MS COCO
-* Jupyter notebooks to visualize the detection pipeline at every step
-* ParallelModel class for multi-GPU training
-* Evaluation on MS COCO metrics (AP)
-* Example of training on your own dataset
-
-
-The code is documented and designed to be easy to extend. If you use it in your research, please consider citing this repository (bibtex below). If you work on 3D vision, you might find our recently released [Matterport3D](https://matterport.com/blog/2017/09/20/announcing-matterport3d-research-dataset/) dataset useful as well.
-This dataset was created from 3D-reconstructed spaces captured by our customers who agreed to make them publicly available for academic use. You can see more examples [here](https://matterport.com/gallery/).
-
-# Getting Started
-* [demo.ipynb](samples/demo.ipynb) Is the easiest way to start. It shows an example of using a model pre-trained on MS COCO to segment objects in your own images.
-It includes code to run object detection and instance segmentation on arbitrary images.
-
-* [train_shapes.ipynb](samples/shapes/train_shapes.ipynb) shows how to train Mask R-CNN on your own dataset. This notebook introduces a toy dataset (Shapes) to demonstrate training on a new dataset.
-
-* ([model.py](mrcnn/model.py), [utils.py](mrcnn/utils.py), [config.py](mrcnn/config.py)): These files contain the main Mask RCNN implementation. 
-
-
-* [inspect_data.ipynb](samples/coco/inspect_data.ipynb). This notebook visualizes the different pre-processing steps
-to prepare the training data.
-
-* [inspect_model.ipynb](samples/coco/inspect_model.ipynb) This notebook goes in depth into the steps performed to detect and segment objects. It provides visualizations of every step of the pipeline.
-
-* [inspect_weights.ipynb](samples/coco/inspect_weights.ipynb)
-This notebooks inspects the weights of a trained model and looks for anomalies and odd patterns.
-
-
-# Step by Step Detection
-To help with debugging and understanding the model, there are 3 notebooks 
-([inspect_data.ipynb](samples/coco/inspect_data.ipynb), [inspect_model.ipynb](samples/coco/inspect_model.ipynb),
-[inspect_weights.ipynb](samples/coco/inspect_weights.ipynb)) that provide a lot of visualizations and allow running the model step by step to inspect the output at each point. Here are a few examples:
-
-
-
-## 1. Anchor sorting and filtering
-Visualizes every step of the first stage Region Proposal Network and displays positive and negative anchors along with anchor box refinement.
-![](assets/detection_anchors.png)
-
-## 2. Bounding Box Refinement
-This is an example of final detection boxes (dotted lines) and the refinement applied to them (solid lines) in the second stage.
-![](assets/detection_refinement.png)
-
-## 3. Mask Generation
-Examples of generated masks. These then get scaled and placed on the image in the right location.
-
-![](assets/detection_masks.png)
-
-## 4.Layer activations
-Often it's useful to inspect the activations at different layers to look for signs of trouble (all zeros or random noise).
-
-![](assets/detection_activations.png)
-
-## 5. Weight Histograms
-Another useful debugging tool is to inspect the weight histograms. These are included in the inspect_weights.ipynb notebook.
-
-![](assets/detection_histograms.png)
-
-## 6. Logging to TensorBoard
-TensorBoard is another great debugging and visualization tool. The model is configured to log losses and save weights at the end of every epoch.
-
-![](assets/detection_tensorboard.png)
-
-## 6. Composing the different pieces into a final result
-
-![](assets/detection_final.png)
-
-
-# Training on MS COCO
-We're providing pre-trained weights for MS COCO to make it easier to start. You can
-use those weights as a starting point to train your own variation on the network.
-Training and evaluation code is in `samples/coco/coco.py`. You can import this
-module in Jupyter notebook (see the provided notebooks for examples) or you
-can run it directly from the command line as such:
-
-```
-# Train a new model starting from pre-trained COCO weights
-python3 samples/coco/coco.py train --dataset=/path/to/coco/ --model=coco
-
-# Train a new model starting from ImageNet weights
-python3 samples/coco/coco.py train --dataset=/path/to/coco/ --model=imagenet
-
-# Continue training a model that you had trained earlier
-python3 samples/coco/coco.py train --dataset=/path/to/coco/ --model=/path/to/weights.h5
-
-# Continue training the last model you trained. This will find
-# the last trained weights in the model directory.
-python3 samples/coco/coco.py train --dataset=/path/to/coco/ --model=last
-```
-
-You can also run the COCO evaluation code with:
-```
-# Run COCO evaluation on the last trained model
-python3 samples/coco/coco.py evaluate --dataset=/path/to/coco/ --model=last
-```
-
-The training schedule, learning rate, and other parameters should be set in `samples/coco/coco.py`.
-
-
-# Training on Your Own Dataset
-
-Start by reading this [blog post about the balloon color splash sample](https://engineering.matterport.com/splash-of-color-instance-segmentation-with-mask-r-cnn-and-tensorflow-7c761e238b46). It covers the process starting from annotating images to training to using the results in a sample application.
-
-In summary, to train the model on your own dataset you'll need to extend two classes:
-
-```Config```
-This class contains the default configuration. Subclass it and modify the attributes you need to change.
-
-```Dataset```
-This class provides a consistent way to work with any dataset. 
-It allows you to use new datasets for training without having to change 
-the code of the model. It also supports loading multiple datasets at the
-same time, which is useful if the objects you want to detect are not 
-all available in one dataset. 
-
-See examples in `samples/shapes/train_shapes.ipynb`, `samples/coco/coco.py`, `samples/balloon/balloon.py`, and `samples/nucleus/nucleus.py`.
-
-## Differences from the Official Paper
-This implementation follows the Mask RCNN paper for the most part, but there are a few cases where we deviated in favor of code simplicity and generalization. These are some of the differences we're aware of. If you encounter other differences, please do let us know.
-
-* **Image Resizing:** To support training multiple images per batch we resize all images to the same size. For example, 1024x1024px on MS COCO. We preserve the aspect ratio, so if an image is not square we pad it with zeros. In the paper the resizing is done such that the smallest side is 800px and the largest is trimmed at 1000px.
-* **Bounding Boxes**: Some datasets provide bounding boxes and some provide masks only. To support training on multiple datasets we opted to ignore the bounding boxes that come with the dataset and generate them on the fly instead. We pick the smallest box that encapsulates all the pixels of the mask as the bounding box. This simplifies the implementation and also makes it easy to apply image augmentations that would otherwise be harder to apply to bounding boxes, such as image rotation.
-
-    To validate this approach, we compared our computed bounding boxes to those provided by the COCO dataset.
-We found that ~2% of bounding boxes differed by 1px or more, ~0.05% differed by 5px or more, 
-and only 0.01% differed by 10px or more.
-
-* **Learning Rate:** The paper uses a learning rate of 0.02, but we found that to be
-too high, and often causes the weights to explode, especially when using a small batch
-size. It might be related to differences between how Caffe and TensorFlow compute 
-gradients (sum vs mean across batches and GPUs). Or, maybe the official model uses gradient
-clipping to avoid this issue. We do use gradient clipping, but don't set it too aggressively.
-We found that smaller learning rates converge faster anyway so we go with that.
-
-## Citation
-Use this bibtex to cite this repository:
-```
-@misc{matterport_maskrcnn_2017,
-  title={Mask R-CNN for object detection and instance segmentation on Keras and TensorFlow},
-  author={Waleed Abdulla},
-  year={2017},
-  publisher={Github},
-  journal={GitHub repository},
-  howpublished={\url{https://github.com/matterport/Mask_RCNN}},
-}
-```
-
-## Contributing
-Contributions to this repository are welcome. Examples of things you can contribute:
-* Speed Improvements. Like re-writing some Python code in TensorFlow or Cython.
-* Training on other datasets.
-* Accuracy Improvements.
-* Visualizations and examples.
-
-You can also [join our team](https://matterport.com/careers/) and help us build even more projects like this one.
-
-## Requirements
-Python 3.4, TensorFlow 1.3, Keras 2.0.8 and other common packages listed in `requirements.txt`.
-
-### MS COCO Requirements:
-To train or test on MS COCO, you'll also need:
-* pycocotools (installation instructions below)
-* [MS COCO Dataset](http://cocodataset.org/#home)
-* Download the 5K [minival](https://dl.dropboxusercontent.com/s/o43o90bna78omob/instances_minival2014.json.zip?dl=0)
-  and the 35K [validation-minus-minival](https://dl.dropboxusercontent.com/s/s3tw5zcg7395368/instances_valminusminival2014.json.zip?dl=0)
-  subsets. More details in the original [Faster R-CNN implementation](https://github.com/rbgirshick/py-faster-rcnn/blob/master/data/README.md).
-
-If you use Docker, the code has been verified to work on
-[this Docker container](https://hub.docker.com/r/waleedka/modern-deep-learning/).
-
-
-## Installation
-1. Clone this repository
-2. Install dependencies
-   ```bash
-   pip3 install -r requirements.txt
-   ```
-3. Run setup from the repository root directory
-    ```bash
-    python3 setup.py install
-    ``` 
-3. Download pre-trained COCO weights (mask_rcnn_coco.h5) from the [releases page](https://github.com/matterport/Mask_RCNN/releases).
-4. (Optional) To train or test on MS COCO install `pycocotools` from one of these repos. They are forks of the original pycocotools with fixes for Python3 and Windows (the official repo doesn't seem to be active anymore).
-
-    * Linux: https://github.com/waleedka/coco
-    * Windows: https://github.com/philferriere/cocoapi.
-    You must have the Visual C++ 2015 build tools on your path (see the repo for additional details)
-
-# Projects Using this Model
-If you extend this model to other datasets or build projects that use it, we'd love to hear from you.
-
-### [4K Video Demo](https://www.youtube.com/watch?v=OOT3UIXZztE) by Karol Majek.
-[![Mask RCNN on 4K Video](assets/4k_video.gif)](https://www.youtube.com/watch?v=OOT3UIXZztE)
-
-### [Images to OSM](https://github.com/jremillard/images-to-osm): Improve OpenStreetMap by adding baseball, soccer, tennis, football, and basketball fields.
-
-![Identify sport fields in satellite images](assets/images_to_osm.png)
-
-### [Splash of Color](https://engineering.matterport.com/splash-of-color-instance-segmentation-with-mask-r-cnn-and-tensorflow-7c761e238b46). A blog post explaining how to train this model from scratch and use it to implement a color splash effect.
-![Balloon Color Splash](assets/balloon_color_splash.gif)
-
-
-### [Segmenting Nuclei in Microscopy Images](samples/nucleus). Built for the [2018 Data Science Bowl](https://www.kaggle.com/c/data-science-bowl-2018)
-Code is in the `samples/nucleus` directory.
-
-![Nucleus Segmentation](assets/nucleus_segmentation.png)
-
-### [Detection and Segmentation for Surgery Robots](https://github.com/SUYEgit/Surgery-Robot-Detection-Segmentation) by the NUS Control & Mechatronics Lab.
-![Surgery Robot Detection and Segmentation](https://github.com/SUYEgit/Surgery-Robot-Detection-Segmentation/raw/master/assets/video.gif)
-
-### [Reconstructing 3D buildings from aerial LiDAR](https://medium.com/geoai/reconstructing-3d-buildings-from-aerial-lidar-with-ai-details-6a81cb3079c0)
-A proof of concept project by [Esri](https://www.esri.com/), in collaboration with Nvidia and Miami-Dade County. Along with a great write up and code by Dmitry Kudinov, Daniel Hedges, and Omar Maher.
-![3D Building Reconstruction](assets/project_3dbuildings.png)
-
-### [Usiigaci: Label-free Cell Tracking in Phase Contrast Microscopy](https://github.com/oist/usiigaci)
-A project from Japan to automatically track cells in a microfluidics platform. Paper is pending, but the source code is released.
-
-![](assets/project_usiigaci1.gif) ![](assets/project_usiigaci2.gif)
-
-### [Characterization of Arctic Ice-Wedge Polygons in Very High Spatial Resolution Aerial Imagery](http://www.mdpi.com/2072-4292/10/9/1487)
-Research project to understand the complex processes between degradations in the Arctic and climate change. By Weixing Zhang, Chandi Witharana, Anna Liljedahl, and Mikhail Kanevskiy.
-![image](assets/project_ice_wedge_polygons.png)
-
-### [Mask-RCNN Shiny](https://github.com/huuuuusy/Mask-RCNN-Shiny)
-A computer vision class project by HU Shiyu to apply the color pop effect on people with beautiful results.
-![](assets/project_shiny1.jpg)
-
-### [Mapping Challenge](https://github.com/crowdAI/crowdai-mapping-challenge-mask-rcnn): Convert satellite imagery to maps for use by humanitarian organisations.
-![Mapping Challenge](assets/mapping_challenge.png)
-
-### [GRASS GIS Addon](https://github.com/ctu-geoforall-lab/i.ann.maskrcnn) to generate vector masks from geospatial imagery. Based on a [Master's thesis](https://github.com/ctu-geoforall-lab-projects/dp-pesek-2018) by Ondřej Pešek.
-![GRASS GIS Image](assets/project_grass_gis.png)
