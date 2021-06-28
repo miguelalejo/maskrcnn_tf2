@@ -70,50 +70,50 @@ from common.config import CONFIG
 tf_limit_gpu_memory(tf, 4500)
 
 # Update info about classes in your dataset
-CONFIG.update({'class_dict': { },
-               'num_classes': ,
-              },
-             )
-CONFIG.update({'meta_shape': (1 + 3 + 3 + 4 + 1 + CONFIG['num_classes']),})
-
+CONFIG.update({'class_dict': {},
+               'num_classes':,
+},
+)
+CONFIG.update({'meta_shape': (1 + 3 + 3 + 4 + 1 + CONFIG['num_classes']), })
 
 # Init Mask-RCNN model
 model = mask_rcnn_functional(config=CONFIG)
 
 # Init training and validation datasets
-base_dir=os.getcwd().replace('src', 'dataset_folder')
+base_dir = os.getcwd().replace('src', 'dataset_folder')
 train_dir = os.path.join(base_dir, 'train')
 val_dir = os.path.join(base_dir, 'val')
 
 train_dataset = preprocess.SegmentationDataset(images_dir=train_dir,
-                                              classes_dict=CONFIG['class_dict'],
-                                              augmentation=aug.get_training_augmentation(
-                                                  image_size=CONFIG['img_size'],
-                                                  normalize=CONFIG['normalization']
-                                              ),
-                                              **CONFIG
-                                              )
+                                               classes_dict=CONFIG['class_dict'],
+                                               augmentation=aug.get_training_augmentation(
+                                                   image_size=CONFIG['img_size'],
+                                                   normalize=CONFIG['normalization']
+                                               ),
+                                               **CONFIG
+                                               )
 val_dataset = preprocess.SegmentationDataset(images_dir=val_dir,
-                                            classes_dict=CONFIG['class_dict'],
-                                            augmentation=aug.get_validation_augmentation(
-                                                image_size=CONFIG['img_size'],
-                                                normalize=CONFIG['normalization']
-                                            ),
-                                            **CONFIG
-                                        )
+                                             classes_dict=CONFIG['class_dict'],
+                                             augmentation=aug.get_validation_augmentation(
+                                                 image_size=CONFIG['img_size'],
+                                                 normalize=CONFIG['normalization']
+                                             ),
+                                             **CONFIG
+                                             )
 # train_model function includes dataset and dataloader initialization, callbacks configuration, 
 # a list of losses definition and final model compiling with optimizer defined in CONFIG.
-train_model(model, 
-           train_dataset=train_dataset,
-           val_dataset=val_dataset,
-           config=CONFIG, 
-           weights_path=None)
+train_model(model,
+            train_dataset=train_dataset,
+            val_dataset=val_dataset,
+            config=CONFIG,
+            weights_path=None)
 ```
 
 Balloon dataset example:
 
 ```python
 import os
+
 os.chdir('..')
 import tensorflow as tf
 
@@ -128,12 +128,13 @@ from common.utils import tf_limit_gpu_memory
 tf_limit_gpu_memory(tf, 4500)
 
 from common.config import CONFIG
+
 CONFIG.update({'class_dict': {'balloon': 1, 'background': 0},
                'num_classes': 2,
                'epochs': 30,
-              },
-             )
-CONFIG.update({'meta_shape': (1 + 3 + 3 + 4 + 1 + CONFIG['num_classes']),})
+               },
+              )
+CONFIG.update({'meta_shape': (1 + 3 + 3 + 4 + 1 + CONFIG['num_classes']), })
 
 # Init Mask-RCNN model
 model = mask_rcnn_functional(config=CONFIG)
@@ -144,41 +145,43 @@ train_dir = os.path.join(base_dir, 'train')
 val_dir = os.path.join(base_dir, 'val')
 
 train_dataset = balloon.BalloonDataset(images_dir=train_dir,
-                                      class_key='object',
-                                      classes_dict=CONFIG['class_dict'],
-                                      augmentation=aug.get_training_augmentation(
-                                          image_size=CONFIG['img_size'],
-                                          normalize=CONFIG['normalization']
-                                      ),
-                                      json_annotation_key=None,
-                                      **CONFIG
-                                           )
+                                       class_key='object',
+                                       classes_dict=CONFIG['class_dict'],
+                                       augmentation=aug.get_training_augmentation(
+                                           image_size=CONFIG['img_size'],
+                                           normalize=CONFIG['normalization']
+                                       ),
+                                       json_annotation_key=None,
+                                       **CONFIG
+                                       )
 
 val_dataset = balloon.BalloonDataset(images_dir=val_dir,
-                                    class_key='object',
-                                    classes_dict=CONFIG['class_dict'],
-                                    augmentation=aug.get_validation_augmentation(
-                                        image_size=CONFIG['img_size'],
-                                        normalize=CONFIG['normalization']
-                                    ),
-                                    json_annotation_key=None,
-                                    **CONFIG
-                                   )
+                                     class_key='object',
+                                     classes_dict=CONFIG['class_dict'],
+                                     augmentation=aug.get_validation_augmentation(
+                                         image_size=CONFIG['img_size'],
+                                         normalize=CONFIG['normalization']
+                                     ),
+                                     json_annotation_key=None,
+                                     **CONFIG
+                                     )
 
 # train_model function includes dataset and dataloader initialization, callbacks configuration, 
 # a list of losses definition and final model compiling with optimizer defined in CONFIG.
-train_model(model, 
-      train_dataset=train_dataset,
-      val_dataset=val_dataset,
-      config=CONFIG, 
-      weights_path=None)
+train_model(model,
+            train_dataset=train_dataset,
+            val_dataset=val_dataset,
+            config=CONFIG,
+            weights_path=None)
 ```
+
 See `./src/notebooks/example_training_balloon.ipynb`.
 
 MS COCO dataset example:
 
 ```python
 import os
+
 os.chdir('..')
 import tensorflow as tf
 
@@ -193,6 +196,7 @@ from common.utils import tf_limit_gpu_memory
 tf_limit_gpu_memory(tf, 4500)
 
 from common.config import CONFIG
+
 CONFIG.update(coco.COCO_CONFIG)
 
 # Init Mask-RCNN model
@@ -200,7 +204,7 @@ model = mask_rcnn_functional(config=CONFIG)
 
 # You can also download dataset with auto_download=True argument
 # It will be downloaded and unzipped in dataset_dir
-base_dir = r'<COCO_PATH>/coco2017' 
+base_dir = r'<COCO_PATH>/coco2017'
 train_dir = os.path.join(base_dir, 'train')
 val_dir = os.path.join(base_dir, 'val')
 
@@ -208,45 +212,35 @@ train_dataset = coco.CocoDataset(dataset_dir=train_dir,
                                  subset='train',
                                  year=2017,
                                  auto_download=False,
-                               
+
                                  # SegmentationDataset necessary parent attributes
                                  augmentation=aug.get_training_augmentation(
-                                               image_size=CONFIG['img_size'],
-                                               normalize=CONFIG['normalization']
+                                     image_size=CONFIG['img_size'],
+                                     normalize=CONFIG['normalization']
                                  ),
                                  **CONFIG
-                                )
+                                 )
 
 val_dataset = coco.CocoDataset(dataset_dir=val_dir,
                                subset='val',
                                year=2017,
                                auto_download=False,
-                               
+
                                # SegmentationDataset necessary parent attributes
                                augmentation=aug.get_validation_augmentation(
-                                           image_size=CONFIG['img_size'],
-                                           normalize=CONFIG['normalization']
+                                   image_size=CONFIG['img_size'],
+                                   normalize=CONFIG['normalization']
                                ),
                                **CONFIG
-                              )
+                               )
 
-train_dataloader = preprocess.DataLoader(train_dataset,
-                                         shuffle=True,
-                                         name='train',
-                                         **CONFIG
-                                        )
-val_dataloader = preprocess.DataLoader(val_dataset,
-                                       shuffle=False,
-                                       name='val',
-                                       **CONFIG
-                                      )
-
-train_model(model, 
+train_model(model,
             train_dataset=train_dataset,
             val_dataset=val_dataset,
-            config=CONFIG, 
+            config=CONFIG,
             weights_path=None)
 ```
+
 See `./src/notebooks/example_training_coco.ipynb`.
 
 4. Logs folder with weights and scalars will appear in `./src/` Monitor training with tensorboard tool:
