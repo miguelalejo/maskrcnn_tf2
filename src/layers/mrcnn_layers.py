@@ -1076,7 +1076,7 @@ class PyramidROIAlign(tfl.Layer):
         pooled = []
         box_to_level = []
         # Workaround for onnxruntime which have issues with empty tensors concat because of the dimensions reorder.
-        unique_levels = tf.unique(tf.squeeze(roi_level))[0]
+        unique_levels = tf.unique(tf.reshape(roi_level, (-1, )))[0]
         unique_levels_padded = tf.pad(unique_levels, tf.constant([[0, 4]]), constant_values=2)
         unique_levels_padded = tf.split(unique_levels_padded[:4], 4)
 
@@ -1108,11 +1108,11 @@ class PyramidROIAlign(tfl.Layer):
                 method="bilinear"))
 
         # Pack pooled features into one tensor
-        pooled = tf.concat(pooled, axis=0)[:tf.shape(boxes)[1]]
+        pooled = tf.concat(pooled, axis=0)[:tf.shape(boxes)[0]*tf.shape(boxes)[1]]
 
         # Pack box_to_level mapping into one array and add another
         # column representing the order of pooled boxes
-        box_to_level = tf.concat(box_to_level, axis=0)[:tf.shape(boxes)[1]]
+        box_to_level = tf.concat(box_to_level, axis=0)[:tf.shape(boxes)[0]*tf.shape(boxes)[1]]
 
         box_range = tf.expand_dims(tf.range(tf.shape(box_to_level)[0]), 1)
         box_to_level = tf.concat([tf.cast(box_to_level, tf.int32), box_range],
