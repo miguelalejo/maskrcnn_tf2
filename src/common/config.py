@@ -2,7 +2,7 @@ import os
 
 import numpy as np
 
-CLASS_DICT = {'background': 0, 'licence': 1}
+CLASS_DICT = {'background': 0, 'balloon': 1}
 CLASSES_NUM = len(CLASS_DICT.keys())
 
 CONFIG = {
