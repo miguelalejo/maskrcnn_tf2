@@ -7,7 +7,7 @@ tqdm==4.46.1
 pycocotools==2.0.2
 tf2onnx==1.8.5
 onnx==1.8.1
-onnxruntime==1.6.0
+onnxruntime==1.4.0
 scipy==1.4.1
 albumentations==0.4.5
 efficientnet==1.1.1

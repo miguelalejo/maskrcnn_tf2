@@ -1,5 +1,5 @@
 import os
-
+import multiprocessing as mp
 import numpy as np
 
 CLASS_DICT = {'background': 0, 'balloon': 1}
@@ -48,7 +48,7 @@ CONFIG = {
     'training': True,
     'log_per_steps': 5,
     'use_multiprocessing': True,
-    'workers': 6,
+    'workers': mp.cpu_count()//2,
 
     'callback': {
         # TensorBoard callback

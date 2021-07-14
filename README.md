@@ -111,6 +111,8 @@ train_model(model,
 
 Balloon dataset example:
 
+Download balloon dataset [here](https://github.com/matterport/Mask_RCNN/releases/download/v2.1/balloon_dataset.zip)
+
 ```python
 import os
 
@@ -511,6 +513,7 @@ Jetson AGX Xavier:
 * [ ] MS COCO weights for Mask-RCNN with all supported backbones;
 * [ ] Package maskrcnn_tf2 project;
 * [ ] Tensorflow v2.3, v2.4 support;
+* [ ] Tensorflow v2.5 support;
 * [ ] tf.keras.applications support for most backbones;
 
 ---
