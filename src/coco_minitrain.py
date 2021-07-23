@@ -48,7 +48,7 @@ if __name__ == '__main__':
                   )
 
     # Init training and validation datasets
-    base_dir = r'/media/alexander/Samsung_T5/temp/coco2017'
+    base_dir = r''
     train_dir = os.path.join(base_dir, 'train')
     val_dir = os.path.join(base_dir, 'val')
 

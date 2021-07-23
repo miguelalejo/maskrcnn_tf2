@@ -40,7 +40,7 @@ if __name__ == '__main__':
                   )
 
     # Set folder for coco dataset
-    base_dir = r'./coco2017'
+    base_dir = r''
 
     # Initialize training and validation datasets
     train_dataset = coco.CocoDataset(dataset_dir=base_dir,
