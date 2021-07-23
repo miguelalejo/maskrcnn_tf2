@@ -24,15 +24,6 @@ def train_model(model, train_dataset, val_dataset, config, weights_path=None, lo
 
     """
 
-    # Image size must be dividable by 2 multiple times
-    """
-    h, w = config['image_shape'][:2]
-    if h / 2 ** 6 != int(h / 2 ** 6) or w / 2 ** 6 != int(w / 2 ** 6):
-        raise Exception("Image size must be dividable by 2 at least 6 times "
-                        "to avoid fractions when downscaling and upscaling."
-                        "For example, use 256, 320, 384, 448, 512, 640, ... etc.")
-    """
-
     # Check batch_size and images_per_gpu
     if config['images_per_gpu'] != config['batch_size']:
         im_per_gpu = config['images_per_gpu']
