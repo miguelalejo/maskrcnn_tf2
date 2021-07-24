@@ -22,7 +22,6 @@ if __name__ == '__main__':
     CONFIG.update(coco.COCO_CONFIG)
 
     # Set only 5 COCO classes
-    # [512, 576, 640, 704, 768, 832, 896, 960, 1024]
     CONFIG.update({'class_dict': {'background': 0,
                                   'person': 1,
                                   'bicycle': 2,

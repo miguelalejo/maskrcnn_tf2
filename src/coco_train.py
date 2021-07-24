@@ -20,14 +20,10 @@ if __name__ == '__main__':
     from common.config import CONFIG
 
     CONFIG.update(coco.COCO_CONFIG)
-
-    # Set only 5 COCO classes
-    # [512, 576, 640, 704, 768, 832, 896, 960, 1024]
     CONFIG.update({'image_shape': (1024, 1024, 3),
                    'image_resize_mode': 'square',
                    'img_size': 1024,
                    'image_max_dim': 1024,
-
                    'backbone': 'mobilenet',
                    'epochs': 150,
                    'batch_size': 2,
