@@ -131,12 +131,7 @@ tf_limit_gpu_memory(tf, 4500)
 
 from common.config import CONFIG
 
-CONFIG.update({'class_dict': {'balloon': 1, 'background': 0},
-               'num_classes': 2,
-               'epochs': 30,
-               },
-              )
-CONFIG.update({'meta_shape': (1 + 3 + 3 + 4 + 1 + CONFIG['num_classes']), })
+CONFIG.update(balloon.BALLON_CONFIG)
 
 # Init Mask-RCNN model
 model = mask_rcnn_functional(config=CONFIG)
