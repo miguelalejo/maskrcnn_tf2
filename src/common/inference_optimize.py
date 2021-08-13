@@ -1,5 +1,5 @@
 import os
-
+import re
 import numpy as np
 import onnx
 import onnx_graphsurgeon as gs
@@ -79,27 +79,19 @@ def add_trt_resize_nearest(graph, config, verbose=False):
     if verbose:
         print(f'\nResizeNearest_TRT attributes: {attrs}')
 
-    upsampling_nodes_list = {'resnet18': ['Resize__172:0', 'Resize__182:0', 'Resize__192:0'],
-                             'resnet34': ['Resize__236:0', 'Resize__246:0', 'Resize__256:0'],
-                             'resnet50': ['Resize__300:0', 'Resize__310:0', 'Resize__320:0'],
-                             'resnet101': ['Resize__504:0', 'Resize__514:0', 'Resize__524:0'],
-                             'mobilenet': ['Resize__303:0', 'Resize__313:0', 'Resize__323:0'],
-                             'mobilenetv2': ['Resize__431:0', 'Resize__441:0', 'Resize__451:0'],
-                             'efficientnetb0': ['Resize__410:0', 'Resize__420:0', 'Resize__430:0'],
-                             'efficientnetb1': ['Resize__546:0', 'Resize__556:0', 'Resize__566:0'],
-                             'efficientnetb2': ['Resize__546:0', 'Resize__556:0', 'Resize__566:0'],
-                             'efficientnetb3': ['Resize__606:0', 'Resize__616:0', 'Resize__626:0'],
-
-                             }[config['backbone']]
+    # Get a dict with Resize__ layers
+    upsampling_nodes_dict = {int(x[8:11]): x for x in graph.tensors().keys() if re.match(r'Resize__[0-9]+:0', x)}
+    upsampling_node_ids = sorted(upsampling_nodes_dict.keys())
 
     add_list = ['mask_rcnn_inference/tf_op_layer_AddV2/AddV2',
                 'mask_rcnn_inference/tf_op_layer_AddV2_1/AddV2_1',
                 'mask_rcnn_inference/tf_op_layer_AddV2_2/AddV2_2'
                 ]
 
-    for upsample_node_name, add_node_name in zip(upsampling_nodes_list, add_list):
-        print(upsample_node_name)
+    for upsample_node_id, add_node_name in zip(upsampling_node_ids, add_list):
 
+        upsample_node_name = upsampling_nodes_dict[upsample_node_id]
+        print(upsample_node_name)
         node = graph.tensors()[upsample_node_name]
         node_inputs = [node.inputs[0].inputs[0]]
 
@@ -582,77 +574,24 @@ def modify_onnx_model(model_path, config, output_names=None, verbose=False):
         graph.nodes[node_id].inputs.clear()
         graph.nodes[node_id].outputs.clear()
 
-    special_backbone_nodes = {'resnet18':
-                                  ['mask_rcnn_inference/mrcnn_class_bn1/batch_normalization/FusedBatchNormV3__721',
-                                   'mask_rcnn_inference/mrcnn_class_conv2/conv2d_1/BiasAdd__738',
-                                   'mask_rcnn_inference/mrcnn_class_bn2/batch_normalization_1/FusedBatchNormV3__755',
-                                   ],
+    special_nodes = []
+    pattern_list = ['mask_rcnn_inference/mrcnn_class_bn1/batch_normalization/FusedBatchNormV3__[0-9]+:0',
+                    'mask_rcnn_inference/mrcnn_class_conv2/conv2d_1/BiasAdd__[0-9]+:0',
+                    'mask_rcnn_inference/mrcnn_class_bn2/batch_normalization_1/FusedBatchNormV3__[0-9]+:0'
+                    ]
+    for pattern in pattern_list:
+        special_nodes.extend([x[:-2] for x in graph.tensors().keys() if re.match(pattern, x)])
 
-                              'resnet34':
-                                  ['mask_rcnn_inference/mrcnn_class_bn1/batch_normalization/FusedBatchNormV3__785',
-                                   'mask_rcnn_inference/mrcnn_class_conv2/conv2d_1/BiasAdd__802',
-                                   'mask_rcnn_inference/mrcnn_class_bn2/batch_normalization_1/FusedBatchNormV3__819'
-                                   ],
-
-                              'resnet50':
-                                  ['mask_rcnn_inference/mrcnn_class_bn1/batch_normalization/FusedBatchNormV3__849',
-                                   'mask_rcnn_inference/mrcnn_class_conv2/conv2d_1/BiasAdd__866',
-                                   'mask_rcnn_inference/mrcnn_class_bn2/batch_normalization_1/FusedBatchNormV3__883'
-                                   ],
-
-                              'resnet101':
-                                  ['mask_rcnn_inference/mrcnn_class_bn1/batch_normalization/FusedBatchNormV3__1053',
-                                   'mask_rcnn_inference/mrcnn_class_conv2/conv2d_1/BiasAdd__1070',
-                                   'mask_rcnn_inference/mrcnn_class_bn2/batch_normalization_1/FusedBatchNormV3__1087'
-                                   ],
-
-                              'mobilenet':
-                                  ['mask_rcnn_inference/mrcnn_class_bn1/batch_normalization/FusedBatchNormV3__852',
-                                   'mask_rcnn_inference/mrcnn_class_conv2/conv2d_1/BiasAdd__869',
-                                   'mask_rcnn_inference/mrcnn_class_bn2/batch_normalization_1/FusedBatchNormV3__886'
-                                   ],
-
-                              'mobilenetv2':
-                                  ['mask_rcnn_inference/mrcnn_class_bn1/batch_normalization/FusedBatchNormV3__980',
-                                   'mask_rcnn_inference/mrcnn_class_conv2/conv2d_1/BiasAdd__997',
-                                   'mask_rcnn_inference/mrcnn_class_bn2/batch_normalization_1/FusedBatchNormV3__1014'
-                                   ],
-
-                              'efficientnetb0':
-                                  ['mask_rcnn_inference/mrcnn_class_bn1/batch_normalization/FusedBatchNormV3__959',
-                                   'mask_rcnn_inference/mrcnn_class_conv2/conv2d_1/BiasAdd__976',
-                                   'mask_rcnn_inference/mrcnn_class_bn2/batch_normalization_1/FusedBatchNormV3__993',
-                                   ],
-
-                              'efficientnetb1':
-                                  ['mask_rcnn_inference/mrcnn_class_bn1/batch_normalization/FusedBatchNormV3__1095',
-                                   'mask_rcnn_inference/mrcnn_class_conv2/conv2d_1/BiasAdd__1112',
-                                   'mask_rcnn_inference/mrcnn_class_bn2/batch_normalization_1/FusedBatchNormV3__1129',
-                                   ],
-
-                              'efficientnetb2':
-                                  ['mask_rcnn_inference/mrcnn_class_bn1/batch_normalization/FusedBatchNormV3__1095',
-                                   'mask_rcnn_inference/mrcnn_class_conv2/conv2d_1/BiasAdd__1112',
-                                   'mask_rcnn_inference/mrcnn_class_bn2/batch_normalization_1/FusedBatchNormV3__1129',
-                                   ],
-
-                              'efficientnetb3':
-                                  ['mask_rcnn_inference/mrcnn_class_bn1/batch_normalization/FusedBatchNormV3__1155',
-                                   'mask_rcnn_inference/mrcnn_class_conv2/conv2d_1/BiasAdd__1172',
-                                   'mask_rcnn_inference/mrcnn_class_bn2/batch_normalization_1/FusedBatchNormV3__1189',
-                                   ]
-
-                              }
-    node_pairs = [[special_backbone_nodes[config['backbone']][0],
+    node_pairs = [[special_nodes[0],
                    'mask_rcnn_inference/mrcnn_class_conv1/conv2d/BiasAdd:0'
                    ],
                   ['mask_rcnn_inference/fpnclf_relu_act1/Relu',
                    'mask_rcnn_inference/mrcnn_class_bn1/batch_normalization/FusedBatchNormV3:0'
                    ],
-                  [special_backbone_nodes[config['backbone']][1],
+                  [special_nodes[1],
                    'mask_rcnn_inference/fpnclf_relu_act1/Relu:0'
                    ],
-                  [special_backbone_nodes[config['backbone']][2],
+                  [special_nodes[2],
                    'mask_rcnn_inference/mrcnn_class_conv2/conv2d_1/BiasAdd:0'
                    ],
                   ['mask_rcnn_inference/fpnclf_relu_act2/Relu',

@@ -5,7 +5,7 @@ keras==2.4.3
 numpy==1.18.5
 tqdm==4.46.1
 pycocotools==2.0.2
-tf2onnx==1.8.5
+tf2onnx==1.8.5             # Successfully tested: 1.8.5, 1.9.0
 onnx==1.8.1
 onnxruntime==1.4.0
 scipy==1.4.1
