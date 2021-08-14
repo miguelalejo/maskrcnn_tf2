@@ -9,6 +9,7 @@ order to have a choice in balance between accuracy and speed, to make model more
 
 * tensorflow v2.2.0
 * tensorflow v2.3.4
+* tensorflow v2.4.3
 
 ### Supported backbones ###
 
@@ -28,11 +29,15 @@ order to have a choice in balance between accuracy and speed, to make model more
 ### Environment setup
 
 ```bash
-# Define preferred Tensorflow version: tf2.2, tf2.3
+# Define preferred Tensorflow version: tf2.2, tf2.3, tf2.4
 # For example, Tensorflow 2.2 env:
 $ conda create -n tf2.2 python=3.7
 $ conda activate tf2.2
 $ pip install -r requirements_tf2.2.txt
+
+# You may also need onnx_graphsurgeon and tensorrt python binding for TensorRT optimization
+$ pip install <TENSORRT_PATH>/python/<TENSORRT_PYTHON_BINDING.whl>
+$ pip install <TENSORRT_PATH>/onnx_graphsurgeon/onnx_graphsurgeon-x.y.z-py2.py3-none-any.whl
 ```
 
 ### Prepare dataset class and data augmentation
@@ -510,8 +515,7 @@ Jetson AGX Xavier:
 * [ ] NCWH support to avoid some transpose and reshape layers to increase total inference speed;
 * [ ] MS COCO weights for Mask-RCNN with all supported backbones;
 * [ ] Package maskrcnn_tf2 project;
-* [ ] Tensorflow v2.4 support;
-* [ ] Tensorflow v2.5 support;
+* [ ] Tensorflow v2.5, v2.6 support;
 * [ ] tf.keras.applications support for most backbones;
 
 ---

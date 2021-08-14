@@ -1,10 +1,12 @@
 import os
 import re
+
 import numpy as np
 import onnx
 import onnx_graphsurgeon as gs
 import tensorrt as trt
 import tf2onnx
+from tensorflow import __version__ as TF_VERSION
 
 
 def maskrcnn_to_onnx(model, model_name, input_spec, kwargs):
@@ -83,13 +85,18 @@ def add_trt_resize_nearest(graph, config, verbose=False):
     upsampling_nodes_dict = {int(x[8:11]): x for x in graph.tensors().keys() if re.match(r'Resize__[0-9]+:0', x)}
     upsampling_node_ids = sorted(upsampling_nodes_dict.keys())
 
-    add_list = ['mask_rcnn_inference/tf_op_layer_AddV2/AddV2',
-                'mask_rcnn_inference/tf_op_layer_AddV2_1/AddV2_1',
-                'mask_rcnn_inference/tf_op_layer_AddV2_2/AddV2_2'
-                ]
+    if float(TF_VERSION[:-2]) < 2.4:
+        add_list = ['mask_rcnn_inference/tf_op_layer_AddV2/AddV2',
+                    'mask_rcnn_inference/tf_op_layer_AddV2_1/AddV2_1',
+                    'mask_rcnn_inference/tf_op_layer_AddV2_2/AddV2_2'
+                    ]
+    else:
+        add_list = ['mask_rcnn_inference/tf.__operators__.add/AddV2',
+                    'mask_rcnn_inference/tf.__operators__.add_1/AddV2',
+                    'mask_rcnn_inference/tf.__operators__.add_2/AddV2'
+                    ]
 
     for upsample_node_id, add_node_name in zip(upsampling_node_ids, add_list):
-
         upsample_node_name = upsampling_nodes_dict[upsample_node_id]
         print(upsample_node_name)
         node = graph.tensors()[upsample_node_name]
