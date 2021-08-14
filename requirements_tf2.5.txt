@@ -1,0 +1,18 @@
+# conda create -n tf2.5 python=3.8.11
+tensorflow==2.5.1
+image-classifiers==1.0.0
+keras==2.4.3
+numpy==1.19.2
+tqdm==4.46.1
+pycocotools==2.0.2
+tf2onnx==1.8.5             # Successfully tested: 1.8.5, 1.9.0
+onnx==1.8.1
+onnxruntime==1.4.0
+scipy==1.4.1
+albumentations==0.4.5
+efficientnet==1.1.1
+matplotlib==3.2.2
+watermark==2.2.0
+pytest==6.1.2
+#onnx-graphsurgeon==0.2.6  # Manual installation from TensorRT folder
+#tensorrt==7.2.3.4         # Manual installation from TensorRT folder

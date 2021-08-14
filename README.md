@@ -10,6 +10,7 @@ order to have a choice in balance between accuracy and speed, to make model more
 * tensorflow v2.2.0
 * tensorflow v2.3.4
 * tensorflow v2.4.3
+* tensorflow v2.5.1
 
 ### Supported backbones ###
 
@@ -29,7 +30,7 @@ order to have a choice in balance between accuracy and speed, to make model more
 ### Environment setup
 
 ```bash
-# Define preferred Tensorflow version: tf2.2, tf2.3, tf2.4
+# Define preferred Tensorflow version: tf2.{2,3,4,5}
 # For example, Tensorflow 2.2 env:
 $ conda create -n tf2.2 python=3.7
 $ conda activate tf2.2
@@ -315,9 +316,9 @@ __Inference with TensorRT:__
         * fp16:
           `trtexec --onnx=<PATH_TO_ONNX_GRAPH> --saveEngine=<PATH_TO_TRT_ENGINE> --fp16 --workspace=<WORKSPACE_SIZE> --verbose`
 
-Known issues:
+#### Known issues:
 
-    1. `../rtSafe/cublas/cublasLtWrapper.cpp (279) - Assertion Error in getCublasLtHeuristic: 0 (cublasStatus == CUBLAS_STATUS_SUCCESS)`
+    1. TensorRT: `../rtSafe/cublas/cublasLtWrapper.cpp (279) - Assertion Error in getCublasLtHeuristic: 0 (cublasStatus == CUBLAS_STATUS_SUCCESS)`
        
         * Possible cause: cuda and TensorRT versions mismatch;
         * Possible workaround if error still exists - remove cublasLt from tacticSources:
@@ -325,7 +326,26 @@ Known issues:
               `trtexec --onnx=<PATH_TO_ONNX_GRAPH> --saveEngine=<PATH_TO_TRT_ENGINE> --tacticSources=-cublasLt,+cublas --workspace=<WORKSPACE_SIZE> --verbose`
             # fp16:
                `trtexec --onnx=<PATH_TO_ONNX_GRAPH> --saveEngine=<PATH_TO_TRT_ENGINE> --tacticSources=-cublasLt,+cublas --fp16 --workspace=<WORKSPACE_SIZE> --verbose`
+    
+    2. Tensorlfow v2.5: AttributeError: module 'keras.utils' has no attribute 'get_file'
+       
+       * Possible cause: the influence of keras-nightly automatically suggested with tensorflow installation.
+       * Possible workaround:
+         
+         Open __init__.py in <ANACONDA_PATH>/envs/tf2.5/lib/python3.8/site-packages/classification_models
+         
+         Modify file:
 
+         import keras_applications as ka
+         from .__version__ import __version__
+         import tensorflow.keras.utils as utils
+         
+         def get_submodules_from_kwargs(kwargs):
+             backend = kwargs.get('backend', ka._KERAS_BACKEND)
+             layers = kwargs.get('layers', ka._KERAS_LAYERS)
+             models = kwargs.get('models', ka._KERAS_MODELS)
+             return backend, layers, models, utils
+         
 #### Mask-RCNN with NVIDIA Jetson devices. TensorRT=7.1.3:
 
 This [NVIDIA doc](https://docs.nvidia.com/metropolis/TLT/tlt-user-guide/text/object_detection/yolo_v4.html#tensorrt-oss-on-jetson-arm64)
@@ -515,7 +535,7 @@ Jetson AGX Xavier:
 * [ ] NCWH support to avoid some transpose and reshape layers to increase total inference speed;
 * [ ] MS COCO weights for Mask-RCNN with all supported backbones;
 * [ ] Package maskrcnn_tf2 project;
-* [ ] Tensorflow v2.5, v2.6 support;
+* [ ] Tensorflow v2.6 support;
 * [ ] tf.keras.applications support for most backbones;
 
 ---
