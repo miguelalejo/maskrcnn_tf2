@@ -379,8 +379,7 @@ def modify_onnx_model(model_path, config, output_names=None, verbose=False):
     print(f'\nInitial graph inputs: {graph.inputs}')
     print(f'\nInitial graph outputs: {graph.outputs}')
 
-    graph.outputs = [graph.tensors()['fpnclf_mrcnn_bbox_reshape'],
-                     graph.tensors()['mrcnn_mask']]
+    graph.outputs.clear()
 
     #  Remove tensorflow layers: DetectionLayer, ProposalLayer by cleaning its tensors inputs and outputs
     variables = []
@@ -535,6 +534,12 @@ def modify_onnx_model(model_path, config, output_names=None, verbose=False):
     # Zero Pad fix for ResNet-backbones
     if 'resnet' in config['backbone']:
         resnet_num = config['backbone'].replace('resnet', '')
+
+        if f'mask_rcnn_inference/backbone_resnet{resnet_num}/relu0/LeakyRelu:0' in graph.tensors().keys():
+            tensor_name = f'mask_rcnn_inference/backbone_resnet{resnet_num}/relu0/LeakyRelu:0'
+        else:
+            tensor_name = f'mask_rcnn_inference/backbone_resnet{resnet_num}/relu0/Relu:0'
+
         graph.onnx_zero_pad(name='zero_padding',
                             input_tensor=graph.tensors()[
                                 f'mask_rcnn_inference/backbone_resnet{resnet_num}/relu0/Relu:0'],
@@ -582,9 +587,9 @@ def modify_onnx_model(model_path, config, output_names=None, verbose=False):
         graph.nodes[node_id].outputs.clear()
 
     special_nodes = []
-    pattern_list = ['mask_rcnn_inference/mrcnn_class_bn1/batch_normalization/FusedBatchNormV3__[0-9]+:0',
-                    'mask_rcnn_inference/mrcnn_class_conv2/conv2d_1/BiasAdd__[0-9]+:0',
-                    'mask_rcnn_inference/mrcnn_class_bn2/batch_normalization_1/FusedBatchNormV3__[0-9]+:0'
+    pattern_list = [r'(\w+)/mrcnn_class_bn1/batch_normalization/FusedBatchNormV3__[0-9]+:0',
+                    r'(\w+)/mrcnn_class_conv2/conv2d_1/BiasAdd__[0-9]+:0',
+                    r'(\w+)/mrcnn_class_bn2/batch_normalization_1/FusedBatchNormV3__[0-9]+:0'
                     ]
     for pattern in pattern_list:
         special_nodes.extend([x[:-2] for x in graph.tensors().keys() if re.match(pattern, x)])

@@ -1931,9 +1931,10 @@ class MaskRCNNBackbone:
         self.config = config
         self.preprocess_input = None
         self.backbone = None
-        self._backbone_list = ['resnet18', 'resnet34', 'resnet50', 'resnet101',
+        self._backbone_list = ['resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152',
                                'mobilenet', 'mobilenetv2',
                                'efficientnetb0', 'efficientnetb1', 'efficientnetb2', 'efficientnetb3',
+                               'efficientnetb4', 'efficientnetb5', 'efficientnetb6', 'efficientnetb7'
                                ]
 
         self.backbone_outputs = {
@@ -1941,6 +1942,7 @@ class MaskRCNNBackbone:
             'resnet34': ['pooling0', 'stage2_unit1_relu1', 'stage3_unit1_relu1', 'stage4_unit1_relu1', 'relu1'],
             'resnet50': ['pooling0', 'stage2_unit1_relu1', 'stage3_unit1_relu1', 'stage4_unit1_relu1', 'relu1'],
             'resnet101': ['pooling0', 'stage2_unit1_relu1', 'stage3_unit1_relu1', 'stage4_unit1_relu1', 'relu1'],
+            'resnet152': ['pooling0', 'stage2_unit1_relu1', 'stage3_unit1_relu1', 'stage4_unit1_relu1', 'relu1'],
 
             'mobilenet': ['conv_pw_1_relu', 'conv_pw_3_relu', 'conv_pw_5_relu',
                           'conv_pw_10_relu', 'conv_pw_13_relu'],
@@ -1952,7 +1954,7 @@ class MaskRCNNBackbone:
         self.backbone_outputs.update(
             {f'efficientnetb{i}': ['block2a_activation', 'block3a_expand_activation',
                                    'block4a_expand_activation', 'block6a_expand_activation',
-                                   'top_activation'] for i in [0, 1, 2, 3]}
+                                   'top_activation'] for i in range(8)}
         )
 
         if self.backbone_name not in self._backbone_list:
@@ -1964,6 +1966,10 @@ class MaskRCNNBackbone:
                            'efficientnetb1': efn.EfficientNetB1,
                            'efficientnetb2': efn.EfficientNetB2,
                            'efficientnetb3': efn.EfficientNetB3,
+                           'efficientnetb4': efn.EfficientNetB4,
+                           'efficientnetb5': efn.EfficientNetB5,
+                           'efficientnetb6': efn.EfficientNetB6,
+                           'efficientnetb7': efn.EfficientNetB7,
                            }
         if 'efficientnet' in self.backbone_name:
             # EfficientNets
