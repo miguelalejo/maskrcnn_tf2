@@ -95,18 +95,18 @@ val_dir = os.path.join(base_dir, 'val')
 
 train_dataset = preprocess.SegmentationDataset(images_dir=train_dir,
                                                classes_dict=CONFIG['class_dict'],
-                                               augmentation=aug.get_training_augmentation(
-                                                   image_size=CONFIG['img_size'],
+                                               preprocess_transform=preprocess.get_input_preprocess(
                                                    normalize=CONFIG['normalization']
                                                ),
+                                               augmentation=aug.get_training_augmentation(),
                                                **CONFIG
-                                               )
+                                                )
 val_dataset = preprocess.SegmentationDataset(images_dir=val_dir,
                                              classes_dict=CONFIG['class_dict'],
-                                             augmentation=aug.get_validation_augmentation(
-                                                 image_size=CONFIG['img_size'],
+                                             preprocess_transform=preprocess.get_input_preprocess(
                                                  normalize=CONFIG['normalization']
                                              ),
+                                             json_annotation_key=None,
                                              **CONFIG
                                              )
 # train_model function includes dataset and dataloader initialization, callbacks configuration, 
@@ -153,10 +153,10 @@ val_dir = os.path.join(base_dir, 'val')
 train_dataset = balloon.BalloonDataset(images_dir=train_dir,
                                        class_key='object',
                                        classes_dict=CONFIG['class_dict'],
-                                       augmentation=aug.get_training_augmentation(
-                                           image_size=CONFIG['img_size'],
+                                       preprocess_transform=preprocess.get_input_preprocess(
                                            normalize=CONFIG['normalization']
                                        ),
+                                       augmentation=aug.get_training_augmentation(),
                                        json_annotation_key=None,
                                        **CONFIG
                                        )
@@ -164,8 +164,7 @@ train_dataset = balloon.BalloonDataset(images_dir=train_dir,
 val_dataset = balloon.BalloonDataset(images_dir=val_dir,
                                      class_key='object',
                                      classes_dict=CONFIG['class_dict'],
-                                     augmentation=aug.get_validation_augmentation(
-                                         image_size=CONFIG['img_size'],
+                                     preprocess_transform=preprocess.get_input_preprocess(
                                          normalize=CONFIG['normalization']
                                      ),
                                      json_annotation_key=None,
@@ -214,27 +213,22 @@ base_dir = r'<COCO_PATH>/coco2017'
 train_dir = os.path.join(base_dir, 'train')
 val_dir = os.path.join(base_dir, 'val')
 
-train_dataset = coco.CocoDataset(dataset_dir=train_dir,
+train_dataset = coco.CocoDataset(dataset_dir=base_dir,
                                  subset='train',
                                  year=2017,
-                                 auto_download=False,
-
-                                 # SegmentationDataset necessary parent attributes
-                                 augmentation=aug.get_training_augmentation(
-                                     image_size=CONFIG['img_size'],
+                                 auto_download=True,
+                                 preprocess_transform=preprocess.get_input_preprocess(
                                      normalize=CONFIG['normalization']
                                  ),
+                                 augmentation=aug.get_training_augmentation(),
                                  **CONFIG
                                  )
 
-val_dataset = coco.CocoDataset(dataset_dir=val_dir,
+val_dataset = coco.CocoDataset(dataset_dir=base_dir,
                                subset='val',
                                year=2017,
-                               auto_download=False,
-
-                               # SegmentationDataset necessary parent attributes
-                               augmentation=aug.get_validation_augmentation(
-                                   image_size=CONFIG['img_size'],
+                               auto_download=True,
+                               preprocess_transform=preprocess.get_input_preprocess(
                                    normalize=CONFIG['normalization']
                                ),
                                **CONFIG
@@ -532,7 +526,24 @@ Jetson AGX Xavier:
 
 --- 
 
-* [ ] NCWH support to avoid some transpose and reshape layers to increase total inference speed;
+* [x] Fix data normalization, 
+* [x] Add backbone name to logs
+* [ ] Check and update all notebooks
+  * example_data_loader_balloon.ipynb
+  * example_data_loader_coco.ipynb
+  * example_training_balloon.ipynb
+  * example_training_coco.ipynb
+* [ ] Update resnets and add leaky_relu to resnets
+* [ ] Update tests
+* [ ] Add resnet152
+* [ ] Add more efficientnets, 
+* [ ] Add mobilenet_v3, 
+* [ ] Add densenet, resnext, SE-ResNet, SE-ResNeXt
+* [ ] Move logs outside the source code
+
+
+* [ ] NCWH support to avoid some transpose and reshape layers to increase total inference speed. Find errors;
+
 * [ ] MS COCO weights for Mask-RCNN with all supported backbones;
 * [ ] Package maskrcnn_tf2 project;
 * [ ] Tensorflow v2.6 support;
