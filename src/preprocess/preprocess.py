@@ -3,6 +3,7 @@ import os
 import warnings
 
 import cv2
+import albumentations as img_album
 import numpy as np
 import scipy
 from common import utils
@@ -185,7 +186,7 @@ class SegmentationDataset:
         original_image_shape = original_image.shape
 
         if self.preprocess_transform:
-            image = self.preprocess_transform(original_image)
+            image = self.preprocess_transform(image=original_image)['image']
 
         original_masks_array, class_ids_array = self.create_mask(image, id)  # Create image masks from annotation
 
@@ -391,7 +392,7 @@ class DataLoader(Sequence):
             batch_image_meta[gen_batch] = image_meta
             batch_rpn_match[gen_batch] = rpn_match[:, np.newaxis]
             batch_rpn_bbox[gen_batch] = rpn_bbox
-            batch_images[gen_batch] = utils.normalize_image(image)
+            batch_images[gen_batch] = image
             batch_gt_class_ids[gen_batch, :gt_class_ids.shape[0]] = gt_class_ids
             batch_gt_boxes[gen_batch, :gt_boxes.shape[0]] = gt_boxes
             batch_gt_masks[gen_batch, :, :, :gt_masks.shape[-1]] = gt_masks
@@ -451,3 +452,24 @@ class DataLoader(Sequence):
         self.indexes = np.arange(len(self.dataset))
         if self.shuffle:
             np.random.shuffle(self.indexes)
+
+
+def get_input_preprocess(normalize=None):
+    """
+    Input preprocessing
+    Args:
+        normalize: dict, with normalization parameters: mean, std
+
+    Returns: albumentations.Compose or None
+
+    """
+    test_transform = None
+    if normalize:
+        test_transform = [img_album.Normalize(mean=normalize['mean'],
+                                              std=normalize['std'],
+                                              max_pixel_value=255.0,
+                                              always_apply=True)
+                          ]
+        test_transform = img_album.Compose(test_transform)
+
+    return test_transform
