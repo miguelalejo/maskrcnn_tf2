@@ -85,7 +85,8 @@ def train_model(model, train_dataset, val_dataset, config, weights_path=None, lo
     model.compile(optimizer=optimizer, losses_dict=losses_dict, run_eagerly=True)
 
     # Load weights for MaskRCNN created previously during training.
-    tensorboard_logdir = "logs/scalars/" + datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    bbone = config['backbone']
+    tensorboard_logdir = f"logs/scalars/maskrcnn_{bbone}_" + datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     initial_epoch = 0
     if weights_path:
         model.load_weights(weights_path)
