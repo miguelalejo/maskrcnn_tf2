@@ -134,10 +134,7 @@ def residual_bottleneck_block(filters, stage, block, strides=None, attention=Non
         conv_name, bn_name, relu_name, sc_name = handle_block_names(stage, block)
 
         x = layers.BatchNormalization(name=bn_name + '1', **bn_params)(input_tensor)
-        if leaky_relu:
-            x = layers.LeakyReLU(name=relu_name + '1')(x)
-        else:
-            x = layers.Activation('relu', name=relu_name + '1')(x)
+        x = layers.Activation('relu', name=relu_name + '1')(x)
 
         # defining shortcut connection
         if cut == 'pre':
@@ -159,10 +156,7 @@ def residual_bottleneck_block(filters, stage, block, strides=None, attention=Non
         x = layers.Conv2D(filters, (3, 3), strides=strides, name=conv_name + '2', **conv_params)(x)
 
         x = layers.BatchNormalization(name=bn_name + '3', **bn_params)(x)
-        if leaky_relu:
-            x = layers.LeakyReLU(name=relu_name + '3')(x)
-        else:
-            x = layers.Activation('relu', name=relu_name + '3')(x)
+        x = layers.Activation('relu', name=relu_name + '3')(x)
         x = layers.Conv2D(filters * 4, (1, 1), name=conv_name + '3', **conv_params)(x)
 
         # use attention block if defined
@@ -242,10 +236,7 @@ def ResNet(model_params, input_shape=None, input_tensor=None, include_top=True,
     x = layers.ZeroPadding2D(padding=(3, 3))(x)
     x = layers.Conv2D(init_filters, (7, 7), strides=(2, 2), name='conv0', **conv_params)(x)
     x = layers.BatchNormalization(name='bn0', **bn_params)(x)
-    if leaky_relu:
-        x = layers.LeakyReLU(name='relu0')(x)
-    else:
-        x = layers.Activation('relu', name='relu0')(x)
+    x = layers.Activation('relu', name='relu0')(x)
     x = layers.ZeroPadding2D(padding=(1, 1))(x)
     x = layers.MaxPooling2D((3, 3), strides=(2, 2), padding='valid', name='pooling0')(x)
 
