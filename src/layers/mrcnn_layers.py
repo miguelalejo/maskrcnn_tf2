@@ -1,7 +1,7 @@
 import efficientnet.keras as efn
 import numpy as np
 import tensorflow as tf
-from classification_models.keras import Classifiers
+from layers.resnet.models_factory import Classifiers
 from common import utils
 from tensorflow.keras import layers as tfl
 
@@ -1918,18 +1918,17 @@ def fpn_mask_graph(inputs, pool_size, num_classes, train_bn):
 
 
 class MaskRCNNBackbone:
-    def __init__(self, backbone_name, weights, input_shape):
+    def __init__(self, config):
         """
         Mask-RCNN backbones manager
         Args:
-            backbone_name: Mask-RCNN backbone name, str
-            weights:       Pretrained weights name, str
-            input_shape:   Input image shape, list of ints
+            config:        General model config
         """
         super(MaskRCNNBackbone, self).__init__()
-        self.backbone_name = backbone_name
-        self.weights = weights
-        self.input_shape = input_shape
+        self.backbone_name = config['backbone']
+        self.input_shape = config['image_shape']
+        self.weights = config['backbone_init_weights']
+        self.config = config
         self.preprocess_input = None
         self.backbone = None
         self._backbone_list = ['resnet18', 'resnet34', 'resnet50', 'resnet101',
@@ -1971,11 +1970,25 @@ class MaskRCNNBackbone:
             model = _effnet_mapping[self.backbone_name](input_shape=self.input_shape,
                                                         weights=self.weights,
                                                         include_top=False)
-        else:
-            # ResNets, MobileNets
+        elif 'resnet' in self.backbone_name:
+            # ResNets
             model_class, preprocess_input = Classifiers.get(self.backbone_name)
-            model = model_class(input_shape=self.input_shape, weights=self.weights, include_top=False)
+            model = model_class(input_shape=self.input_shape,
+                                weights=self.weights,
+                                leaky_relu=self.config['resnet_leaky_relu'],
+                                include_top=False
+                                )
             self.preprocess_input = preprocess_input
+        elif 'mobilenet' in self.backbone_name:
+            # MobileNets
+            model_class, preprocess_input = Classifiers.get(self.backbone_name)
+            model = model_class(input_shape=self.input_shape,
+                                weights=self.weights,
+                                include_top=False
+                                )
+            self.preprocess_input = preprocess_input
+        else:
+            raise ValueError(f'Unknown backbone: {self.backbone_name}\nAvailable: {self.backbone_name}')
 
         return model
 

@@ -221,9 +221,7 @@ def mask_rcnn_functional(config):
         proposal_count = config['post_nms_rois_inference']
 
     print(f"""[MaskRCNN] Backbone architecture: {config['backbone']}""")
-    backbone = mrcnnl.MaskRCNNBackbone(backbone_name=config['backbone'],
-                                       weights='imagenet',
-                                       input_shape=config['image_shape']).build()
+    backbone = mrcnnl.MaskRCNNBackbone(config=config).build()
     _, c2, c3, c4, c5 = backbone(input_image)
 
     # rpn_feature_maps =   [p2, p3, p4, p5, p6]
@@ -362,9 +360,7 @@ class MaskRCNN(tf.keras.Model):
 
         # Backbone model for features extraction
         # self.backbone = mrcnnl.ResNetLayer(resnet_type=self.config['backbone'], stage5=True, train_bn=self.training)
-        self.backbone = mrcnnl.MaskRCNNBackbone(backbone_name=config['backbone'],
-                                                weights='imagenet',
-                                                input_shape=config['image_shape']).build()
+        self.backbone = mrcnnl.MaskRCNNBackbone(config=config).build()
 
         # Upsampling layer
         self.upsampling_layer = mrcnnl.UpSamplingLayer(config=self.config)

@@ -25,7 +25,7 @@ CONFIG = {
 
     # Image normalization
     # ImageNet: {'mean': [0.485, 0.456, 0.406], 'std': [0.229, 0.224, 0.225]}
-    'normalization': None,
+    'normalization': {'mean': [0.485, 0.456, 0.406], 'std': [0.229, 0.224, 0.225]},
 
     'image_min_dim': 300,
     'image_min_scale': 0,
@@ -148,5 +148,14 @@ CONFIG = {
     'weight_decay': 0.0002,
     'train_bn': False,
     'l2_reg_batchnorm': False,
+
+    # Additional params
+    #  Initial weights for a backbone:
+    #       1) `None` (random initialization)
+    #       2) 'imagenet' (Classifiers pre-training on ImageNet)
+    #       3)  The path to the weights file to be loaded.
+    'backbone_init_weights': 'imagenet',
+    # Leaky ReLU option for ResNet models
+    'resnet_leaky_relu': True,
 
 }
