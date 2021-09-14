@@ -57,7 +57,7 @@ def get_bn_params(**params):
 #   Residual blocks
 # -------------------------------------------------------------------------
 
-def residual_conv_block(filters, stage, block, strides=(1, 1), attention=None, leaky_relu=True, cut='pre'):
+def residual_conv_block(filters, stage, block, strides=(1, 1), attention=None, leaky_relu=False, cut='pre'):
     """The identity block is the block that has no conv layer at shortcut.
     # Arguments
         input_tensor: input tensor
@@ -112,7 +112,7 @@ def residual_conv_block(filters, stage, block, strides=(1, 1), attention=None, l
     return layer
 
 
-def residual_bottleneck_block(filters, stage, block, strides=None, attention=None, leaky_relu=True, cut='pre'):
+def residual_bottleneck_block(filters, stage, block, strides=None, attention=None, leaky_relu=False, cut='pre'):
     """The identity block is the block that has no conv layer at shortcut.
     # Arguments
         input_tensor: input tensor
@@ -177,7 +177,7 @@ def residual_bottleneck_block(filters, stage, block, strides=None, attention=Non
 
 
 def ResNet(model_params, input_shape=None, input_tensor=None, include_top=True,
-           classes=1000, leaky_relu=True, init_filters=64, weights=None, **kwargs):
+           classes=1000, leaky_relu=False, init_filters=64, weights=None, **kwargs):
     """Instantiates the ResNet, SEResNet architecture.
     Optionally loads weights pre-trained on ImageNet.
     Note that the data format convention used by the model is
@@ -199,7 +199,7 @@ def ResNet(model_params, input_shape=None, input_tensor=None, include_top=True,
         classes: optional number of classes to classify images
             into, only to be specified if `include_top` is True, and
             if no `weights` argument is specified.
-        leaky_relu: use LeakyRelu instead of Relu activation function
+        leaky_relu: add several Leaky ReLU activations
         init_filters: initial number of filters in convolution
     Returns:
         A Keras model instance.
@@ -207,6 +207,10 @@ def ResNet(model_params, input_shape=None, input_tensor=None, include_top=True,
         ValueError: in case of invalid argument for `weights`,
             or invalid input shape.
     """
+
+    if leaky_relu and (weights == 'imagenet'):
+        raise UserWarning('ImageNet weights were not obtained with the Leaky ReLU activations in a model' +
+                          'Please, use weights=None with Leaky ReLU option.')
 
     global backend, layers, models, keras_utils
     backend, layers, models, keras_utils = get_submodules_from_kwargs(kwargs)
@@ -306,7 +310,7 @@ MODELS_PARAMS = {
 
 
 def ResNet18(input_shape=None, input_tensor=None, weights=None, classes=1000,
-             leaky_relu=True, include_top=True, **kwargs):
+             leaky_relu=False, include_top=True, **kwargs):
     return ResNet(
         MODELS_PARAMS['resnet18'],
         input_shape=input_shape,
@@ -320,7 +324,7 @@ def ResNet18(input_shape=None, input_tensor=None, weights=None, classes=1000,
 
 
 def ResNet34(input_shape=None, input_tensor=None, weights=None, classes=1000,
-             leaky_relu=True, include_top=True, **kwargs):
+             leaky_relu=False, include_top=True, **kwargs):
     return ResNet(
         MODELS_PARAMS['resnet34'],
         input_shape=input_shape,
@@ -334,7 +338,7 @@ def ResNet34(input_shape=None, input_tensor=None, weights=None, classes=1000,
 
 
 def ResNet50(input_shape=None, input_tensor=None, weights=None, classes=1000,
-             leaky_relu=True, include_top=True, **kwargs):
+             leaky_relu=False, include_top=True, **kwargs):
     return ResNet(
         MODELS_PARAMS['resnet50'],
         input_shape=input_shape,
@@ -348,7 +352,7 @@ def ResNet50(input_shape=None, input_tensor=None, weights=None, classes=1000,
 
 
 def ResNet101(input_shape=None, input_tensor=None, weights=None, classes=1000,
-              leaky_relu=True, include_top=True, **kwargs):
+              leaky_relu=False, include_top=True, **kwargs):
     return ResNet(
         MODELS_PARAMS['resnet101'],
         input_shape=input_shape,
@@ -362,7 +366,7 @@ def ResNet101(input_shape=None, input_tensor=None, weights=None, classes=1000,
 
 
 def ResNet152(input_shape=None, input_tensor=None, weights=None, classes=1000,
-              leaky_relu=True, include_top=True, **kwargs):
+              leaky_relu=False, include_top=True, **kwargs):
     return ResNet(
         MODELS_PARAMS['resnet152'],
         input_shape=input_shape,
@@ -376,7 +380,7 @@ def ResNet152(input_shape=None, input_tensor=None, weights=None, classes=1000,
 
 
 def SEResNet18(input_shape=None, input_tensor=None, weights=None, classes=1000,
-               leaky_relu=True, include_top=True, **kwargs):
+               leaky_relu=False, include_top=True, **kwargs):
     return ResNet(
         MODELS_PARAMS['seresnet18'],
         input_shape=input_shape,
@@ -390,7 +394,7 @@ def SEResNet18(input_shape=None, input_tensor=None, weights=None, classes=1000,
 
 
 def SEResNet34(input_shape=None, input_tensor=None, weights=None, classes=1000,
-               leaky_relu=True, include_top=True, **kwargs):
+               leaky_relu=False, include_top=True, **kwargs):
     return ResNet(
         MODELS_PARAMS['seresnet34'],
         input_shape=input_shape,

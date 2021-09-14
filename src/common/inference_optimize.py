@@ -82,7 +82,8 @@ def add_trt_resize_nearest(graph, config, verbose=False):
         print(f'\nResizeNearest_TRT attributes: {attrs}')
 
     # Get a dict with Resize__ layers
-    upsampling_nodes_dict = {int(x[8:11]): x for x in graph.tensors().keys() if re.match(r'Resize__[0-9]+:0', x)}
+    upsampling_nodes_dict = {int(x.replace('Resize__', '').replace(':0', '')): x
+                             for x in graph.tensors().keys() if re.match(r'Resize__[0-9]+:0', x)}
     upsampling_node_ids = sorted(upsampling_nodes_dict.keys())
 
     if float(TF_VERSION[:-2]) < 2.4:
@@ -344,6 +345,14 @@ def node_idx_by_name(graph, node_name, mode='equal', verbose=True):
     return node_id
 
 
+def find_tensor_by_pattern(graph, pattern, verbose=False):
+    result = [k for k in graph.tensors().keys() if re.match(pattern, k)]
+    if verbose:
+        print(result)
+    assert len(result) == 1
+    return result[0]
+
+
 def modify_onnx_model(model_path, config, output_names=None, verbose=False):
     """
     Modify Mask-RCNN onnx model for TensorRT optimization.
@@ -358,7 +367,7 @@ def modify_onnx_model(model_path, config, output_names=None, verbose=False):
 
                       Possible output names according to the original graph:
                       ['mrcnn_detection',
-                      'mask_rcnn_inference/fpnclf_mrcnn_class/activation_2/Softmax:0',
+                      'mask_rcnn_inference/fpnclf_mrcnn_class/activation_([0-9]+)/Softmax:0',
                       'fpnclf_mrcnn_bbox_reshape',
                       'mrcnn_mask',
                       'roi',
@@ -458,12 +467,16 @@ def modify_onnx_model(model_path, config, output_names=None, verbose=False):
                              info_shape=[1, config['post_nms_rois_inference'], 4 * config['num_classes'], 1, 1]
                              )
 
+    fpnclf_pattern = r'mask_rcnn_inference/fpnclf_mrcnn_class/activation_([0-9]+)/Softmax:0'
+    fpnclf_act = [k for k in graph.tensors().keys() if re.match(fpnclf_pattern, k)][0]
     graph.onnx_reshape_layer(
-        input_tensor=graph.tensors()['mask_rcnn_inference/fpnclf_mrcnn_class/activation_2/Softmax:0'],
+        input_tensor=graph.tensors()[fpnclf_act],
         reshape=np.array([1, config['post_nms_rois_inference'], config['num_classes'], 1, 1]),
         name='mrcnn_class_reshaped',
         info_shape=[1, config['post_nms_rois_inference'], config['num_classes'], 1, 1]
     )
+    # Set data type to one of the original Mask-RCNN output
+    graph.tensors()[fpnclf_act].dtype = np.float32
 
     # Add DetectionLayer_TRT
     graph.add_trt_detection_layer(
@@ -528,35 +541,30 @@ def modify_onnx_model(model_path, config, output_names=None, verbose=False):
         if verbose:
             print(f'Removed node: {graph.nodes[idx]}')
 
-    # Set data type to one of the original Mask-RCNN output
-    graph.tensors()['mask_rcnn_inference/fpnclf_mrcnn_class/activation_2/Softmax:0'].dtype = np.float32
+    # Zero Pad fix for ResNet, SE-ResNet - backbones
+    if 'resnet' or 'seresnet' in config['backbone']:
+        _bbone_name = config['backbone']
 
-    # Zero Pad fix for ResNet-backbones
-    if 'resnet' in config['backbone']:
-        resnet_num = config['backbone'].replace('resnet', '')
-
-        if f'mask_rcnn_inference/backbone_resnet{resnet_num}/relu0/LeakyRelu:0' in graph.tensors().keys():
-            tensor_name = f'mask_rcnn_inference/backbone_resnet{resnet_num}/relu0/LeakyRelu:0'
+        if f'mask_rcnn_inference/backbone_{_bbone_name}/relu0/LeakyRelu:0' in graph.tensors().keys():
+            tensor_name = f'mask_rcnn_inference/backbone_{_bbone_name}/relu0/LeakyRelu:0'
         else:
-            tensor_name = f'mask_rcnn_inference/backbone_resnet{resnet_num}/relu0/Relu:0'
+            tensor_name = f'mask_rcnn_inference/backbone_{_bbone_name}/relu0/Relu:0'
 
         graph.onnx_zero_pad(name='zero_padding',
-                            input_tensor=graph.tensors()[
-                                f'mask_rcnn_inference/backbone_resnet{resnet_num}/relu0/Relu:0'],
+                            input_tensor=graph.tensors()[tensor_name],
                             pad=np.array([0, 1, 1, 0]))
         # Clear old padding node
         node_id = node_idx_by_name(graph=graph,
-                                   node_name=f'mask_rcnn_inference/backbone_resnet{resnet_num}/zero_padding2d_1/Pad')
+                                   node_name=f'mask_rcnn_inference/backbone_{_bbone_name}/zero_padding2d_1/Pad')
         graph.nodes[node_id].inputs.clear()
         graph.nodes[node_id].outputs.clear()
         # Connect new padding node
         node_id = node_idx_by_name(graph=graph,
-                                   node_name=f'mask_rcnn_inference/backbone_resnet{resnet_num}/pooling0/MaxPool')
+                                   node_name=f'mask_rcnn_inference/backbone_{_bbone_name}/pooling0/MaxPool')
         graph.nodes[node_id].inputs = [graph.tensors()['zero_padding']]
 
     # Zero Pad fix for MobileNet backbones
     if 'mobilenet' in config['backbone']:
-        _bbone_name = config['backbone']
         pad_nodes = {'mobilenet': ['mask_rcnn_inference/backbone_mobilenet/conv_pad_2/Pad',
                                    'mask_rcnn_inference/backbone_mobilenet/conv_pad_4/Pad',
                                    'mask_rcnn_inference/backbone_mobilenet/conv_pad_6/Pad',
@@ -587,15 +595,15 @@ def modify_onnx_model(model_path, config, output_names=None, verbose=False):
         graph.nodes[node_id].outputs.clear()
 
     special_nodes = []
-    pattern_list = [r'(\w+)/mrcnn_class_bn1/batch_normalization/FusedBatchNormV3__[0-9]+:0',
-                    r'(\w+)/mrcnn_class_conv2/conv2d_1/BiasAdd__[0-9]+:0',
-                    r'(\w+)/mrcnn_class_bn2/batch_normalization_1/FusedBatchNormV3__[0-9]+:0'
+    pattern_list = [r'(\w+)/mrcnn_class_bn1/batch_normalization/FusedBatchNormV3__([0-9]+):0',
+                    r'(\w+)/mrcnn_class_conv2/conv2d_([0-9]+)/BiasAdd__([0-9]+):0',
+                    r'(\w+)/mrcnn_class_bn2/batch_normalization_1/FusedBatchNormV3__([0-9]+):0'
                     ]
     for pattern in pattern_list:
         special_nodes.extend([x[:-2] for x in graph.tensors().keys() if re.match(pattern, x)])
 
     node_pairs = [[special_nodes[0],
-                   'mask_rcnn_inference/mrcnn_class_conv1/conv2d/BiasAdd:0'
+                   find_tensor_by_pattern(graph, 'mask_rcnn_inference/mrcnn_class_conv1/conv2d(_?)([0-9]+)/BiasAdd:0')
                    ],
                   ['mask_rcnn_inference/fpnclf_relu_act1/Relu',
                    'mask_rcnn_inference/mrcnn_class_bn1/batch_normalization/FusedBatchNormV3:0'
@@ -604,7 +612,8 @@ def modify_onnx_model(model_path, config, output_names=None, verbose=False):
                    'mask_rcnn_inference/fpnclf_relu_act1/Relu:0'
                    ],
                   [special_nodes[2],
-                   'mask_rcnn_inference/mrcnn_class_conv2/conv2d_1/BiasAdd:0'
+                   find_tensor_by_pattern(graph, 'mask_rcnn_inference/mrcnn_class_conv2/conv2d(_?)([0-9]+)/BiasAdd:0')
+
                    ],
                   ['mask_rcnn_inference/fpnclf_relu_act2/Relu',
                    'mask_rcnn_inference/mrcnn_class_bn2/batch_normalization_1/FusedBatchNormV3:0'
@@ -624,7 +633,7 @@ def modify_onnx_model(model_path, config, output_names=None, verbose=False):
     Outputs according to the original graph:
     
     graph.tensors()['mrcnn_detection'],
-    graph.tensors()['mask_rcnn_inference/fpnclf_mrcnn_class/activation_2/Softmax:0'],
+    graph.tensors()['mask_rcnn_inference/fpnclf_mrcnn_class/activation_([0-9]+)/Softmax:0'],
     graph.tensors()['fpnclf_mrcnn_bbox_reshape'],
     graph.tensors()['mrcnn_mask'],
     graph.tensors()['roi'],

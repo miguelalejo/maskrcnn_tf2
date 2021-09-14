@@ -1,7 +1,7 @@
 import efficientnet.keras as efn
 import numpy as np
 import tensorflow as tf
-from layers.resnet.models_factory import Classifiers
+from layers.backbones.models_factory import Classifiers
 from common import utils
 from tensorflow.keras import layers as tfl
 
@@ -1934,7 +1934,8 @@ class MaskRCNNBackbone:
         self._backbone_list = ['resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152',
                                'mobilenet', 'mobilenetv2',
                                'efficientnetb0', 'efficientnetb1', 'efficientnetb2', 'efficientnetb3',
-                               'efficientnetb4', 'efficientnetb5', 'efficientnetb6', 'efficientnetb7'
+                               'efficientnetb4', 'efficientnetb5', 'efficientnetb6', 'efficientnetb7',
+                               'seresnet18', 'seresnet34', 'seresnet50', 'seresnet101', 'seresnet152',
                                ]
 
         self.backbone_outputs = {
@@ -1948,6 +1949,12 @@ class MaskRCNNBackbone:
                           'conv_pw_10_relu', 'conv_pw_13_relu'],
             'mobilenetv2': ['block_1_expand_relu', 'block_3_expand_relu', 'block_6_expand_relu',
                             'block_13_expand_relu', 'out_relu'],
+
+            'seresnet18': ['pooling0', 'stage2_unit1_relu1', 'stage3_unit1_relu1', 'stage4_unit1_relu1', 'relu1'],
+            'seresnet34': ['pooling0', 'stage2_unit1_relu1', 'stage3_unit1_relu1', 'stage4_unit1_relu1', 'relu1'],
+            'seresnet50': ['pooling0', 'stage2_unit1_relu1', 'stage3_unit1_relu1', 'stage4_unit1_relu1', 'relu1'],
+            'seresnet101': ['pooling0', 'stage2_unit1_relu1', 'stage3_unit1_relu1', 'stage4_unit1_relu1', 'relu1'],
+            'seresnet152': ['pooling0', 'stage2_unit1_relu1', 'stage3_unit1_relu1', 'stage4_unit1_relu1', 'relu1'],
 
         }
 
@@ -1976,8 +1983,8 @@ class MaskRCNNBackbone:
             model = _effnet_mapping[self.backbone_name](input_shape=self.input_shape,
                                                         weights=self.weights,
                                                         include_top=False)
-        elif 'resnet' in self.backbone_name:
-            # ResNets
+        elif 'resnet' in self.backbone_name or 'seresnet' in self.backbone_name:
+            # ResNets, SE-ResNets
             model_class, preprocess_input = Classifiers.get(self.backbone_name)
             model = model_class(input_shape=self.input_shape,
                                 weights=self.weights,
@@ -1992,6 +1999,7 @@ class MaskRCNNBackbone:
                                 weights=self.weights,
                                 include_top=False
                                 )
+
             self.preprocess_input = preprocess_input
         else:
             raise ValueError(f'Unknown backbone: {self.backbone_name}\nAvailable: {self.backbone_name}')

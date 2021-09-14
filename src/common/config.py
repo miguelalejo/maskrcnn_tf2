@@ -155,7 +155,7 @@ CONFIG = {
     #       2) 'imagenet' (Classifiers pre-training on ImageNet)
     #       3)  The path to the weights file to be loaded.
     'backbone_init_weights': 'imagenet',
-    # Add several Leaky ReLU activations in ResNet models.
+    # Add several Leaky ReLU activations in ResNet, SE-ResNet models.
     # Use it with random weights initialization for a resnet backbone
     'resnet_leaky_relu': False,
 
