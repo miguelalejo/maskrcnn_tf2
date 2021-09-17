@@ -262,6 +262,34 @@ def add_trt_special_slice_layer(self, inputs_list, name, verbose=False):
 
 
 @gs.Graph.register()
+def add_trt_lrelu_layer(self, inputs_list, attrs, node_id,  name, verbose=False):
+    """
+    https://github.com/NVIDIA/TensorRT/tree/master/plugin/leakyReluPlugin
+    TensorRT wrapper for Leaky ReLU (PReLU)
+    Args:
+        self:
+        inputs_list:
+        attrs:   {'negSlope': 0.3}, 0.3 - tensorflow default
+        node_id: node id for naming in case of multiple nodes
+        name:    output tensor name
+        verbose:
+
+    Returns:
+
+    """
+    if verbose:
+        print('\nAdded LReLU_TRT')
+    for inp in inputs_list[:2]:
+        inp.outputs.clear()
+
+    return self.layer(op="LReLU_TRT",
+                      name=f'leaky_relu_trt_{node_id}',
+                      attrs=attrs,
+                      inputs=inputs_list,
+                      outputs=[gs.Variable(name=name, dtype=None, shape=None)])
+
+
+@gs.Graph.register()
 def onnx_reshape_layer(self, input_tensor, reshape, name, info_shape):
     """
     Make reshape layer in onnx model.
@@ -325,6 +353,28 @@ def onnx_zero_pad(self, name, input_tensor, pad):
                       outputs=[gs.Variable(name=name, dtype=np.float32, shape=None)])
 
 
+def add_lrelu_nodes(graph, alpha=0.3, verbose=True):
+
+    lrelu_nodes = find_all_nodes_by_pattern(graph, '(.*)/LeakyRelu')
+    for node_id, node in enumerate(lrelu_nodes):
+        input_tensor_to_relu = node.inputs[0]
+        next_node = node.outputs[0].outputs[0]
+        node.inputs.clear()
+        node.outputs.clear()
+        graph.add_trt_lrelu_layer(inputs_list=[input_tensor_to_relu],
+                                  attrs={"negSlope": alpha},
+                                  node_id=node_id,
+                                  name=f'{node.name}:0',
+                                  verbose=verbose)
+        next_node_id = node_idx_by_name(graph=graph, node_name=next_node.name, verbose=False)
+        graph.nodes[next_node_id].inputs.pop(0)
+        graph.nodes[next_node_id].inputs.insert(0, graph.tensors()[f'{node.name}:0'])
+        if verbose:
+            print(f'Leaky ReLU tensor output: {node.name}:0')
+
+    return graph
+
+
 def node_idx_by_name(graph, node_name, mode='equal', verbose=True):
     _modes = ['equal', 'part']
     if mode not in _modes:
@@ -351,6 +401,13 @@ def find_tensor_by_pattern(graph, pattern, verbose=False):
         print(result)
     assert len(result) == 1
     return result[0]
+
+
+def find_all_nodes_by_pattern(graph, pattern, verbose=False):
+    nodes_list = [n for n in graph.nodes if re.match(pattern, n.name)]
+    if verbose:
+        print(nodes_list)
+    return nodes_list
 
 
 def modify_onnx_model(model_path, config, output_names=None, verbose=False):
@@ -388,6 +445,7 @@ def modify_onnx_model(model_path, config, output_names=None, verbose=False):
     print(f'\nInitial graph inputs: {graph.inputs}')
     print(f'\nInitial graph outputs: {graph.outputs}')
 
+    graph.inputs = [graph.tensors()['input_image']]
     graph.outputs.clear()
 
     #  Remove tensorflow layers: DetectionLayer, ProposalLayer by cleaning its tensors inputs and outputs
@@ -403,6 +461,9 @@ def modify_onnx_model(model_path, config, output_names=None, verbose=False):
         except:
             if verbose:
                 print(f'Already cleared: {v}')
+
+    # Add LReLU_TRT nodes if necessary
+    graph = add_lrelu_nodes(graph)
 
     # Add ResizeNearest_TRT
     graph = add_trt_resize_nearest(graph, config=config, verbose=verbose)
@@ -542,7 +603,7 @@ def modify_onnx_model(model_path, config, output_names=None, verbose=False):
             print(f'Removed node: {graph.nodes[idx]}')
 
     # Zero Pad fix for ResNet, SE-ResNet - backbones
-    if 'resnet' or 'seresnet' in config['backbone']:
+    if 'resnet' in config['backbone'] or 'seresnet' in config['backbone']:
         _bbone_name = config['backbone']
 
         if f'mask_rcnn_inference/backbone_{_bbone_name}/relu0/LeakyRelu:0' in graph.tensors().keys():
@@ -603,7 +664,7 @@ def modify_onnx_model(model_path, config, output_names=None, verbose=False):
         special_nodes.extend([x[:-2] for x in graph.tensors().keys() if re.match(pattern, x)])
 
     node_pairs = [[special_nodes[0],
-                   find_tensor_by_pattern(graph, 'mask_rcnn_inference/mrcnn_class_conv1/conv2d(_?)([0-9]+)/BiasAdd:0')
+                   find_tensor_by_pattern(graph, 'mask_rcnn_inference/mrcnn_class_conv1/conv2d(_?)([0-9]+)?/BiasAdd:0')
                    ],
                   ['mask_rcnn_inference/fpnclf_relu_act1/Relu',
                    'mask_rcnn_inference/mrcnn_class_bn1/batch_normalization/FusedBatchNormV3:0'
@@ -612,7 +673,7 @@ def modify_onnx_model(model_path, config, output_names=None, verbose=False):
                    'mask_rcnn_inference/fpnclf_relu_act1/Relu:0'
                    ],
                   [special_nodes[2],
-                   find_tensor_by_pattern(graph, 'mask_rcnn_inference/mrcnn_class_conv2/conv2d(_?)([0-9]+)/BiasAdd:0')
+                   find_tensor_by_pattern(graph, 'mask_rcnn_inference/mrcnn_class_conv2/conv2d(_?)([0-9]+)?/BiasAdd:0')
 
                    ],
                   ['mask_rcnn_inference/fpnclf_relu_act2/Relu',
