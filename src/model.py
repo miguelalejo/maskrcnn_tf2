@@ -91,10 +91,19 @@ class FMaskRCNN(tf.keras.Model):
             assert not np.any(np.isnan(l2_reg_loss_val))
 
             # Calculate summary loss with weights stored in self.config['loss_weights']
-            loss = tf.tensordot(
-                a=[rpn_class_loss_val, rpn_bbox_loss_val, mrcnn_class_loss_val,
-                   mrcnn_bbox_loss_val, mrcnn_mask_loss_val],
-                b=tf.cast(self.config['loss_weights'], 'float32'), axes=1)
+            if not self.config['use_rpn_rois']:
+                # Remove rpn losses if rpn_rois is not used
+                loss_list = [mrcnn_class_loss_val, mrcnn_bbox_loss_val, mrcnn_mask_loss_val]
+                loss_weights = np.array(self.config['loss_weights'])[[2, 3, 4]].tolist()
+            elif self.config['tune_rpn_model_only'] and self.config['use_rpn_rois']:
+                loss_list = [rpn_class_loss_val, rpn_bbox_loss_val]
+                loss_weights = np.array(self.config['loss_weights'])[[0, 1]].tolist()
+            else:
+                loss_list = [rpn_class_loss_val, rpn_bbox_loss_val, mrcnn_class_loss_val,
+                             mrcnn_bbox_loss_val, mrcnn_mask_loss_val]
+                loss_weights = self.config['loss_weights']
+            loss = tf.tensordot(a=loss_list, b=tf.cast(loss_weights, 'float32'), axes=1)
+
             # Add L2-regularization to the total loss
             loss = tf.math.add(loss, l2_reg_loss_val)
 
@@ -154,10 +163,18 @@ class FMaskRCNN(tf.keras.Model):
                                                                        pred_masks=mrcnn_mask)
 
         # Calculate summary loss with weights stored in self.config['loss_weights']
-        loss = tf.tensordot(
-            a=[rpn_class_loss_val, rpn_bbox_loss_val, mrcnn_class_loss_val,
-               mrcnn_bbox_loss_val, mrcnn_mask_loss_val],
-            b=tf.cast(self.config['loss_weights'], 'float32'), axes=1)
+        if not self.config['use_rpn_rois']:
+            # Remove rpn losses if rpn_rois is not used
+            loss_list = [mrcnn_class_loss_val, mrcnn_bbox_loss_val, mrcnn_mask_loss_val]
+            loss_weights = np.array(self.config['loss_weights'])[[2, 3, 4]].tolist()
+        elif self.config['tune_rpn_model_only'] and self.config['use_rpn_rois']:
+            loss_list = [rpn_class_loss_val, rpn_bbox_loss_val]
+            loss_weights = np.array(self.config['loss_weights'])[[0, 1]].tolist()
+        else:
+            loss_list = [rpn_class_loss_val, rpn_bbox_loss_val, mrcnn_class_loss_val,
+                         mrcnn_bbox_loss_val, mrcnn_mask_loss_val]
+            loss_weights = self.config['loss_weights']
+        loss = tf.tensordot(a=loss_list, b=tf.cast(loss_weights, 'float32'), axes=1)
 
         # Update loss tracker
         for loss_name, loss_value in zip(['rpn_class_loss', 'rpn_bbox_loss', 'mrcnn_class_loss', 'mrcnn_bbox_loss',
@@ -232,7 +249,9 @@ def mask_rcnn_functional(config):
     rpn_model = mrcnnl.build_rpn_model(anchor_stride=config['rpn_anchor_stride'],
                                        anchors_per_location=len(config['rpn_anchor_ratios']),
                                        depth=config['top_down_pyramid_size'],
-                                       training=config['training'])
+                                       training=config['training'],
+                                       frozen=config['frozen_rpn_model']
+                                       )
 
     # Loop through pyramid layers
     layer_outputs = []
@@ -260,8 +279,11 @@ def mask_rcnn_functional(config):
         if config['use_rpn_rois']:
             target_rois = rpn_rois
         else:
+            if config['post_nms_rois_training'] != config['random_rois']:
+                raise ValueError('Set post_nms_rois_training == random_rois' +
+                                 f"""for use_rpn_rois={config['use_rpn_rois']} option""")
             # Ignore predicted ROIs and use ROIs provided as an input.
-            input_rois = tfl.Input(shape=[config['post_nms_roi_training'], 4], name="input_roi", dtype=np.int32)
+            input_rois = tfl.Input(shape=[config['post_nms_rois_training'], 4], name="input_roi", dtype=np.float32)
             # Normalize coordinates
             target_rois = mrcnnl.NormBoxesLayer(name='norm_boxes_layer')((input_rois, tf.shape(input_image)[1:3]))
         # Generate detection targets
@@ -281,12 +303,17 @@ def mask_rcnn_functional(config):
                                         train_bn=config['train_bn'],
                                         batch_size=config['batch_size'],
                                         post_nms_rois_inference=config['post_nms_rois_inference'],
-                                        training=config['training']
+                                        training=config['training'],
+                                        frozen=config['frozen_cls_head'],
+                                        leaky_relu=config['cls_head_leaky_relu']
                                         )
         mrcnn_mask = mrcnnl.fpn_mask_graph(inputs=[rois, input_image_meta, mrcnn_feature_maps],
                                            pool_size=config['mask_pool_size'],
                                            num_classes=config['num_classes'],
-                                           train_bn=config['train_bn'])
+                                           train_bn=config['train_bn'],
+                                           frozen=config['frozen_mask_head'],
+                                           leaky_relu=config['mask_head_leaky_relu']
+                                           )
 
         # Model training inputs
         inputs = [input_image, input_image_meta, input_rpn_match, input_rpn_bbox,
@@ -311,7 +338,9 @@ def mask_rcnn_functional(config):
                                         train_bn=config['train_bn'],
                                         batch_size=config['batch_size'],
                                         post_nms_rois_inference=config['post_nms_rois_inference'],
-                                        training=config['training']
+                                        training=config['training'],
+                                        frozen=False,
+                                        leaky_relu=config['cls_head_leaky_relu']
                                         )
 
         # Detections output is [batch, num_detections, (y1, x1, y2, x2, class_id, score)] in normalized coordinates
@@ -329,7 +358,10 @@ def mask_rcnn_functional(config):
         mrcnn_mask = mrcnnl.fpn_mask_graph(inputs=[detection_boxes, input_image_meta, mrcnn_feature_maps],
                                            pool_size=config['mask_pool_size'],
                                            num_classes=config['num_classes'],
-                                           train_bn=config['train_bn'])
+                                           train_bn=config['train_bn'],
+                                           frozen=False,
+                                           leaky_relu=config['mask_head_leaky_relu']
+                                           )
 
         # Model inference inputs and outputs
         inputs = [input_image, input_image_meta]
@@ -338,6 +370,10 @@ def mask_rcnn_functional(config):
 
     # Make model graph in a customized tf.keras.Model with overridden train and test steps
     model = FMaskRCNN(inputs=inputs, outputs=outputs, config=config, name=name)
+    trainable_p = np.sum([np.prod(v.get_shape()) for v in model.trainable_weights])
+    non_trainable_p = np.sum([np.prod(v.get_shape()) for v in model.non_trainable_weights])
+    print('[MaskRCNN] Total params: {:,}'.format(trainable_p + non_trainable_p))
+    print('[MaskRCNN] Trainable params: {:,}'.format(trainable_p))
     return model
 
 

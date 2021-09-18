@@ -66,7 +66,10 @@ def residual_conv_block(filters, stage, block, strides=(1, 1), attention=None, l
         filters: list of integers, the filters of 3 conv layer at main path
         stage: integer, current stage label, used for generating layer names
         block: 'a','b'..., current block label, used for generating layer names
-        cut: one of 'pre', 'post'. used to decide where skip connection is taken
+        attention:
+        leaky_relu:
+
+
     # Returns
         Output tensor for the block.
     """
@@ -209,8 +212,10 @@ def ResNet(model_params, input_shape=None, input_tensor=None, include_top=True,
     """
 
     if leaky_relu and (weights == 'imagenet'):
+        """
         raise UserWarning('ImageNet weights were not obtained with the Leaky ReLU activations in a model' +
                           'Please, use weights=None with Leaky ReLU option.')
+        """
 
     global backend, layers, models, keras_utils
     backend, layers, models, keras_utils = get_submodules_from_kwargs(kwargs)

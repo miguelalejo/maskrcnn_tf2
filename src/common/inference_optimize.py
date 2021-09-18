@@ -262,7 +262,7 @@ def add_trt_special_slice_layer(self, inputs_list, name, verbose=False):
 
 
 @gs.Graph.register()
-def add_trt_lrelu_layer(self, inputs_list, attrs, node_id,  name, verbose=False):
+def add_trt_lrelu_layer(self, inputs_list, attrs, name, verbose=False):
     """
     https://github.com/NVIDIA/TensorRT/tree/master/plugin/leakyReluPlugin
     TensorRT wrapper for Leaky ReLU (PReLU)
@@ -270,8 +270,7 @@ def add_trt_lrelu_layer(self, inputs_list, attrs, node_id,  name, verbose=False)
         self:
         inputs_list:
         attrs:   {'negSlope': 0.3}, 0.3 - tensorflow default
-        node_id: node id for naming in case of multiple nodes
-        name:    output tensor name
+        node_name: original node name
         verbose:
 
     Returns:
@@ -283,10 +282,10 @@ def add_trt_lrelu_layer(self, inputs_list, attrs, node_id,  name, verbose=False)
         inp.outputs.clear()
 
     return self.layer(op="LReLU_TRT",
-                      name=f'leaky_relu_trt_{node_id}',
+                      name=name + '_TRT',
                       attrs=attrs,
                       inputs=inputs_list,
-                      outputs=[gs.Variable(name=name, dtype=None, shape=None)])
+                      outputs=[gs.Variable(name=f"{name}:0", dtype=None, shape=None)])
 
 
 @gs.Graph.register()
@@ -363,14 +362,16 @@ def add_lrelu_nodes(graph, alpha=0.3, verbose=True):
         node.outputs.clear()
         graph.add_trt_lrelu_layer(inputs_list=[input_tensor_to_relu],
                                   attrs={"negSlope": alpha},
-                                  node_id=node_id,
-                                  name=f'{node.name}:0',
+                                  name=node.name,
                                   verbose=verbose)
         next_node_id = node_idx_by_name(graph=graph, node_name=next_node.name, verbose=False)
         graph.nodes[next_node_id].inputs.pop(0)
         graph.nodes[next_node_id].inputs.insert(0, graph.tensors()[f'{node.name}:0'])
         if verbose:
             print(f'Leaky ReLU tensor output: {node.name}:0')
+
+        old_node_id = node_idx_by_name(graph=graph, node_name=node.name, verbose=False)
+        graph.nodes.pop(old_node_id)
 
     return graph
 
@@ -386,11 +387,12 @@ def node_idx_by_name(graph, node_name, mode='equal', verbose=True):
             print('Node name: ', node_name)
             print('Nodes: ', node_id)
     else:
-        node_id = [idx for idx, x in enumerate(graph.nodes) if x.name in node_name]
+        node_id = [idx for idx, x in enumerate(graph.nodes) if re.match(node_name, x.name)]
         print('Node name: ', node_name)
         print('Nodes: ', node_id)
     if len(node_id) != 1:
-        raise ValueError(f'More than one node found with name: {node_name}')
+        raise ValueError(f'Only one node should be associated with a passed name: {node_name}.' +
+                         f'Found: {node_id}: {[graph.nodes[i].name for i in node_id]}')
     node_id = node_id[0]
     return node_id
 
@@ -664,26 +666,26 @@ def modify_onnx_model(model_path, config, output_names=None, verbose=False):
         special_nodes.extend([x[:-2] for x in graph.tensors().keys() if re.match(pattern, x)])
 
     node_pairs = [[special_nodes[0],
-                   find_tensor_by_pattern(graph, 'mask_rcnn_inference/mrcnn_class_conv1/conv2d(_?)([0-9]+)?/BiasAdd:0')
+                   find_tensor_by_pattern(graph, r'mask_rcnn_inference/mrcnn_class_conv1/conv2d(_?)([0-9]+)?/BiasAdd:0')
                    ],
-                  ['mask_rcnn_inference/fpnclf_relu_act1/Relu',
-                   'mask_rcnn_inference/mrcnn_class_bn1/batch_normalization/FusedBatchNormV3:0'
+                  [r'mask_rcnn_inference/fpnclf_relu_act1/(\w+)?Relu',
+                   r'mask_rcnn_inference/mrcnn_class_bn1/batch_normalization/FusedBatchNormV3:0'
                    ],
                   [special_nodes[1],
-                   'mask_rcnn_inference/fpnclf_relu_act1/Relu:0'
+                   find_tensor_by_pattern(graph, r'mask_rcnn_inference/fpnclf_relu_act1/(\w+)?Relu:0')
                    ],
                   [special_nodes[2],
                    find_tensor_by_pattern(graph, 'mask_rcnn_inference/mrcnn_class_conv2/conv2d(_?)([0-9]+)?/BiasAdd:0')
 
                    ],
-                  ['mask_rcnn_inference/fpnclf_relu_act2/Relu',
-                   'mask_rcnn_inference/mrcnn_class_bn2/batch_normalization_1/FusedBatchNormV3:0'
+                  [r'mask_rcnn_inference/fpnclf_relu_act2/(\w+)?Relu',
+                   r'mask_rcnn_inference/mrcnn_class_bn2/batch_normalization_1/FusedBatchNormV3:0'
                    ]
                   ]
 
     for pair in node_pairs:
         node_name, tensor_name = pair
-        node_id = node_idx_by_name(graph=graph, node_name=node_name, verbose=verbose)
+        node_id = node_idx_by_name(graph=graph, node_name=node_name, mode='part', verbose=verbose)
 
         if len(graph.nodes[node_id].inputs) == 1:
             graph.nodes[node_id].inputs = [graph.tensors()[tensor_name]]
