@@ -348,12 +348,12 @@ def onnx_zero_pad(self, name, input_tensor, pad):
     """
     return self.layer(op="Pad",
                       name=name + '_node',
+                      attrs={'constant_value': 0.0},
                       inputs=[input_tensor, gs.Constant(name='zero_pad_values', values=pad)],
                       outputs=[gs.Variable(name=name, dtype=np.float32, shape=None)])
 
 
 def add_lrelu_nodes(graph, alpha=0.3, verbose=True):
-
     lrelu_nodes = find_all_nodes_by_pattern(graph, '(.*)/LeakyRelu')
     for node_id, node in enumerate(lrelu_nodes):
         input_tensor_to_relu = node.inputs[0]
@@ -463,9 +463,6 @@ def modify_onnx_model(model_path, config, output_names=None, verbose=False):
         except:
             if verbose:
                 print(f'Already cleared: {v}')
-
-    # Add LReLU_TRT nodes if necessary
-    graph = add_lrelu_nodes(graph)
 
     # Add ResizeNearest_TRT
     graph = add_trt_resize_nearest(graph, config=config, verbose=verbose)
@@ -606,16 +603,16 @@ def modify_onnx_model(model_path, config, output_names=None, verbose=False):
 
     # Zero Pad fix for ResNet, SE-ResNet - backbones
     if 'resnet' in config['backbone'] or 'seresnet' in config['backbone']:
+
         _bbone_name = config['backbone']
 
         if f'mask_rcnn_inference/backbone_{_bbone_name}/relu0/LeakyRelu:0' in graph.tensors().keys():
             tensor_name = f'mask_rcnn_inference/backbone_{_bbone_name}/relu0/LeakyRelu:0'
         else:
             tensor_name = f'mask_rcnn_inference/backbone_{_bbone_name}/relu0/Relu:0'
-
         graph.onnx_zero_pad(name='zero_padding',
                             input_tensor=graph.tensors()[tensor_name],
-                            pad=np.array([0, 1, 1, 0]))
+                            pad=np.array([0, 0, 1, 1, 0, 0, 1, 1]))
         # Clear old padding node
         node_id = node_idx_by_name(graph=graph,
                                    node_name=f'mask_rcnn_inference/backbone_{_bbone_name}/zero_padding2d_1/Pad')
@@ -625,6 +622,19 @@ def modify_onnx_model(model_path, config, output_names=None, verbose=False):
         node_id = node_idx_by_name(graph=graph,
                                    node_name=f'mask_rcnn_inference/backbone_{_bbone_name}/pooling0/MaxPool')
         graph.nodes[node_id].inputs = [graph.tensors()['zero_padding']]
+
+    if re.match(r"resnext([0-9])+", config['backbone']):
+        _bbone_name = config['backbone']
+
+        pads = find_all_nodes_by_pattern(
+            graph=graph,
+            pattern=f'mask_rcnn_inference/backbone_{_bbone_name}/zero_padding2d_([0-9])+/Pad',
+            verbose=False
+        )
+        for pad_node in pads:
+            pad_node.attrs = {'constant_value': 0.0}
+            pad_node.inputs.pop(1)
+            pad_node.inputs.append(gs.Constant(name='zero_pad_values', values=np.array([0, 0, 1, 1, 0, 0, 1, 1])))
 
     # Zero Pad fix for MobileNet backbones
     if 'mobilenet' in config['backbone']:
@@ -641,8 +651,10 @@ def modify_onnx_model(model_path, config, output_names=None, verbose=False):
                      }[config['backbone']]
         for node_name in pad_nodes:
             node_id = node_idx_by_name(graph=graph, node_name=node_name)
-            graph.nodes[node_id].inputs = [graph.nodes[node_id].inputs[0],
-                                           gs.Constant(name='zero_pad_values', values=np.array([0, 1, 1, 0]))]
+            graph.nodes[node_id].attrs = {'constant_value': 0.0}
+            graph.nodes[node_id].inputs.pop(1)
+            graph.nodes[node_id].inputs.append(gs.Constant(name='zero_pad_values',
+                                                           values=np.array([0, 0, 1, 1, 0, 0, 1, 1])))
 
     # Reconnect fpn classifier nodes
     for node_name in ['mask_rcnn_inference/mrcnn_class_conv1/Shape',
