@@ -1,5 +1,6 @@
-import os
 import multiprocessing as mp
+import os
+
 import numpy as np
 
 CLASS_DICT = {'background': 0, 'balloon': 1}
@@ -25,7 +26,7 @@ CONFIG = {
 
     # Image normalization
     # ImageNet: {'mean': [0.485, 0.456, 0.406], 'std': [0.229, 0.224, 0.225]}
-    'normalization': None,
+    'normalization': {'mean': [0.485, 0.456, 0.406], 'std': [0.229, 0.224, 0.225]},
 
     'image_min_dim': 300,
     'image_min_scale': 0,
@@ -48,11 +49,11 @@ CONFIG = {
     'training': True,
     'log_per_steps': 5,
     'use_multiprocessing': True,
-    'workers': mp.cpu_count()//2,
+    'workers': mp.cpu_count() // 2,
 
     'callback': {
         # TensorBoard callback
-        'log_dir': os.path.join('logs', 'scalars'),
+        'checkpoints_dir': os.path.join('..', 'logs', 'scalars'),
         # ReduceLROnPlateau callback
         'reduce_lr_on_plateau': 0.98,
         'reduce_lr_on_plateau_patience': 10,
@@ -148,5 +149,27 @@ CONFIG = {
     'weight_decay': 0.0002,
     'train_bn': False,
     'l2_reg_batchnorm': False,
+
+    # Additional params
+    #  Initial weights for a backbone:
+    #       1) `None` (random initialization)
+    #       2) 'imagenet' (Classifiers pre-training on ImageNet)
+    #       3)  The path to the weights file to be loaded.
+    'backbone_init_weights': 'imagenet',
+    # Add several Leaky ReLU activations in ResNet, SE-ResNet models.
+    # Use it with random weights initialization (None value).
+    'resnet_leaky_relu': False,
+
+    # Use LeakyReLU in MaskRCNN heads
+    'mask_head_leaky_relu': False,
+    'cls_head_leaky_relu': False,
+
+    # Params for multistage training
+    'tune_rpn_model_only': False,
+    'frozen_backbone': False,
+    'frozen_rpn_model': False,
+    'frozen_mask_head': False,
+    'frozen_cls_head': False
+
 
 }

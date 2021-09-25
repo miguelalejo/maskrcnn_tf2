@@ -11,7 +11,7 @@ def process_input(input_image, config, preprocess_transform=lambda x: x / 255):
     """
     Process image for MaskRCNN inference
     Args:
-        input_image:           Image read by cv2, array
+        input_image:           Image read by cv2 (BGR by default), an array
         config:                MaskRCNN config, dict
         preprocess_transform:  Last image transformation before model inference
                                Default is scaling 1/255, function

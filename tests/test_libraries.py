@@ -1,6 +1,6 @@
 def test_tensorflow():
     import tensorflow as tf
-    assert tf.__version__ == '2.2.0'
+    assert tf.__version__ in ('2.2.0', '2.3.4', '2.4.3', '2.5.1')
 
 
 def test_image_classifiers():
@@ -15,7 +15,7 @@ def test_keras():
 
 def test_numpy():
     import numpy as np
-    assert np.__version__ == '1.18.5'
+    assert np.__version__ in ('1.18.5', '1.19.2')
 
 
 def test_tqdm():
@@ -73,7 +73,7 @@ def test_onnx_graphsurgeon():
         import onnx_graphsurgeon
     except:
         raise ModuleNotFoundError('onnx-graphsurgeon can be manually installed from TensorRT folder.')
-    assert onnx_graphsurgeon.__version__ == '0.2.6'
+    assert onnx_graphsurgeon.__version__ in ('0.2.6', '0.3.11')
 
 
 def test_tensorrt():

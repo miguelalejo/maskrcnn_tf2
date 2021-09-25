@@ -1,7 +1,7 @@
 import efficientnet.keras as efn
 import numpy as np
 import tensorflow as tf
-from classification_models.keras import Classifiers
+from layers.backbones.models_factory import Classifiers
 from common import utils
 from tensorflow.keras import layers as tfl
 
@@ -1754,7 +1754,7 @@ def rpn_graph(inputs, anchors_per_location, anchor_stride, training):
         inputs:
         anchors_per_location:
         anchor_stride:
-        training: bool value
+        training: bool value, training or inference mode
 
     Returns:
 
@@ -1791,7 +1791,7 @@ def rpn_graph(inputs, anchors_per_location, anchor_stride, training):
     return rpn_class_logits, rpn_probs, rpn_bbox
 
 
-def build_rpn_model(anchor_stride, anchors_per_location, depth, training):
+def build_rpn_model(anchor_stride, anchors_per_location, depth, training, frozen):
     """Builds a Keras model of the Region Proposal Network.
     It wraps the RPN graph so it can be used multiple times with shared
     weights.
@@ -1801,6 +1801,9 @@ def build_rpn_model(anchor_stride, anchors_per_location, depth, training):
                    every pixel in the feature map), or 2 (every other pixel).
     depth: Depth of the backbone feature map.
 
+    training: bool, Training or inference mode
+    frozen: bool, freeze rpn_model or not
+
     Returns a Keras Model object. The model outputs, when called, are:
     rpn_class_logits: [batch, H * W * anchors_per_location, 2] Anchor classifier logits (before softmax)
     rpn_probs: [batch, H * W * anchors_per_location, 2] Anchor classifier probabilities.
@@ -1809,38 +1812,71 @@ def build_rpn_model(anchor_stride, anchors_per_location, depth, training):
     """
     input_feature_map = tfl.Input(shape=[None, None, depth], name="input_rpn_feature_map")
     outputs = rpn_graph(input_feature_map, anchors_per_location, anchor_stride, training)
-    return tf.keras.Model(inputs=[input_feature_map], outputs=outputs, name="rpn_model")
+    rpn_model = tf.keras.Model(inputs=[input_feature_map], outputs=outputs, name="rpn_model")
+    if frozen:
+        print('[MaskRCNN] Frozen region proposal model')
+        rpn_model.trainable = False
+    return rpn_model
 
 
 def fpn_classifier_graph(inputs, pool_size, fc_layers_size, num_classes, train_bn,
-                         batch_size, post_nms_rois_inference, training):
+                         batch_size, post_nms_rois_inference, training, frozen, leaky_relu):
+    """
+
+    Args:
+        inputs:
+        pool_size:
+        fc_layers_size:
+        num_classes:
+        train_bn:
+        batch_size:
+        post_nms_rois_inference:
+        training:
+        frozen:
+        leaky_relu:
+
+    Returns:
+
+    """
     # ROI Pooling
     # Shape: [batch, num_rois, POOL_SIZE, POOL_SIZE, channels]
     roi_align = PyramidROIAlign([pool_size, pool_size], name="roi_align_classifier")
     # Two 1024 FC layers (implemented with Conv2D for consistency)
+    trainable = not frozen
+    if frozen:
+        print('[MaskRCNN] Cls head is frozen')
 
-    tdistr_conv1 = tfl.TimeDistributed(tfl.Conv2D(fc_layers_size, (pool_size, pool_size), padding="valid"),
+    tdistr_conv1 = tfl.TimeDistributed(tfl.Conv2D(fc_layers_size,
+                                                  (pool_size, pool_size),
+                                                  padding="valid",
+                                                  trainable=trainable),
                                        name="mrcnn_class_conv1")
     tdistr_bn1 = tfl.TimeDistributed(tfl.BatchNormalization(trainable=train_bn), name='mrcnn_class_bn1')
 
-    tdistr_conv2 = tfl.TimeDistributed(tfl.Conv2D(fc_layers_size, (1, 1)), name="mrcnn_class_conv2")
+    tdistr_conv2 = tfl.TimeDistributed(tfl.Conv2D(fc_layers_size,
+                                                  (1, 1),
+                                                  trainable=trainable), name="mrcnn_class_conv2")
 
     tdistr_bn2 = tfl.TimeDistributed(tfl.BatchNormalization(trainable=train_bn), name='mrcnn_class_bn2')
 
     # Classifier head
-    mrcnn_class_logits_layer = tfl.TimeDistributed(tfl.Dense(num_classes), name='fpnclf_mrcnn_class_logits')
+    mrcnn_class_logits_layer = tfl.TimeDistributed(tfl.Dense(num_classes,
+                                                             trainable=trainable), name='fpnclf_mrcnn_class_logits')
     mrcnn_probs_layer = tfl.TimeDistributed(tfl.Activation("softmax"), name="fpnclf_mrcnn_class")
 
     # BBox head
     # [batch, num_rois, NUM_CLASSES * (dy, dx, log(dh), log(dw))]
-    mrcnn_bbox_fc = tfl.TimeDistributed(tfl.Dense(num_classes * 4, activation='linear'), name='fpnclf_mrcnn_bbox_fc')
+    mrcnn_bbox_fc = tfl.TimeDistributed(tfl.Dense(num_classes * 4,
+                                                  activation='linear',
+                                                  trainable=trainable), name='fpnclf_mrcnn_bbox_fc')
 
     rois, image_meta, feature_maps = inputs
     x = roi_align([rois, image_meta] + feature_maps)
     x = tdistr_bn1(tdistr_conv1(x))
-    x = tfl.Activation('relu', name='fpnclf_relu_act1')(x)
+    x = get_relu(name='fpnclf_relu_act1', leaky=leaky_relu)(x)
+
     x = tdistr_bn2(tdistr_conv2(x))
-    x = tfl.Activation('relu', name='fpnclf_relu_act2')(x)  # -> [None, None, 1, 1, 1024]
+    x = get_relu(name='fpnclf_relu_act2', leaky=leaky_relu)(x) # -> [None, None, 1, 1, 1024]
 
     # Fix for several backbones
     if training:
@@ -1867,49 +1903,68 @@ def fpn_classifier_graph(inputs, pool_size, fc_layers_size, num_classes, train_b
     return mrcnn_class_logits, mrcnn_probs, mrcnn_bbox
 
 
-def fpn_mask_graph(inputs, pool_size, num_classes, train_bn):
-    roi_align = PyramidROIAlign([pool_size, pool_size], name="roi_align_mask")
+def fpn_mask_graph(inputs, pool_size, num_classes, train_bn, frozen, leaky_relu):
+    """
 
-    fpnmask_conv1 = tfl.Conv2D(256, (3, 3), padding="same", name='fpnmask_conv1')
+    Args:
+        inputs:
+        pool_size:
+        num_classes:
+        train_bn:
+        frozen:
+        leaky_relu:
+
+    Returns:
+
+    """
+    roi_align = PyramidROIAlign([pool_size, pool_size], name="roi_align_mask")
+    trainable = not frozen
+    if frozen:
+        print('[MaskRCNN] Mask head is frozen')
+
+    fpnmask_conv1 = tfl.Conv2D(256, (3, 3), padding="same", trainable=trainable, name='fpnmask_conv1')
     tdistr_conv1 = tfl.TimeDistributed(fpnmask_conv1, name="mrcnn_mask_conv1")
     fpnmask_bn1 = tfl.BatchNormalization(trainable=train_bn, name='fpnmask_bn1')
     tdistr_bn1 = tfl.TimeDistributed(fpnmask_bn1, name='mrcnn_mask_bn1')
 
-    fpnmask_conv2 = tfl.Conv2D(256, (3, 3), padding="same", name='fpnmask_conv2')
+    fpnmask_conv2 = tfl.Conv2D(256, (3, 3), padding="same", trainable=trainable, name='fpnmask_conv2')
     tdistr_conv2 = tfl.TimeDistributed(fpnmask_conv2, name="mrcnn_mask_conv2")
     fpnmask_bn2 = tfl.BatchNormalization(trainable=train_bn, name='fpnmask_bn2')
     tdistr_bn2 = tfl.TimeDistributed(fpnmask_bn2, name='mrcnn_mask_bn2')
 
-    fpnmask_conv3 = tfl.Conv2D(256, (3, 3), padding="same", name='fpnmask_conv3')
+    fpnmask_conv3 = tfl.Conv2D(256, (3, 3), padding="same", trainable=trainable, name='fpnmask_conv3')
     tdistr_conv3 = tfl.TimeDistributed(fpnmask_conv3, name="mrcnn_mask_conv3")
     fpnmask_bn3 = tfl.BatchNormalization(trainable=train_bn, name='fpnmask_bn3')
     tdistr_bn3 = tfl.TimeDistributed(fpnmask_bn3, name='mrcnn_mask_bn3')
 
-    fpnmask_conv4 = tfl.Conv2D(256, (3, 3), padding="same", name='fpnmask_conv4')
+    fpnmask_conv4 = tfl.Conv2D(256, (3, 3), padding="same", trainable=trainable, name='fpnmask_conv4')
     tdistr_conv4 = tfl.TimeDistributed(fpnmask_conv4, name="mrcnn_mask_conv4")
     fpnmask_bn4 = tfl.BatchNormalization(trainable=train_bn, name='fpnmask_bn4')
     tdistr_bn4 = tfl.TimeDistributed(fpnmask_bn4, name='mrcnn_mask_bn4')
 
-    fpnmask_deconv = tfl.Conv2DTranspose(256, (2, 2), strides=2, activation="relu", name='fpnmask_convt')
+    fpnmask_deconv_act = tf.keras.layers.LeakyReLU() if leaky_relu else 'relu'
+    fpnmask_deconv = tfl.Conv2DTranspose(256, (2, 2), strides=2, activation=fpnmask_deconv_act,
+                                         trainable=trainable, name='fpnmask_convt')
     tdistr_deconv = tfl.TimeDistributed(fpnmask_deconv, name="mrcnn_mask_deconv")
 
-    fpn_conv_ = tfl.Conv2D(num_classes, (1, 1), strides=1, activation="sigmoid", name='fpnmask_conv_')
+    fpn_conv_ = tfl.Conv2D(num_classes, (1, 1), strides=1, activation="sigmoid",
+                           trainable=trainable, name='fpnmask_conv_')
     tdistr_mrcnn_mask = tfl.TimeDistributed(fpn_conv_, name="mrcnn_mask")
 
     rois, image_meta, feature_maps = inputs
 
     x = roi_align([rois, image_meta] + feature_maps)
     x = tdistr_bn1(tdistr_conv1(x))
-    x = tfl.Activation('relu', name='fpnmask_relu_act1')(x)
+    x = get_relu(name='fpnmask_relu_act1', leaky=leaky_relu)(x)
 
     x = tdistr_bn2(tdistr_conv2(x))
-    x = tfl.Activation('relu', name='fpnmask_relu_act2')(x)
+    x = get_relu(name='fpnmask_relu_act2', leaky=leaky_relu)(x)
 
     x = tdistr_bn3(tdistr_conv3(x))
-    x = tfl.Activation('relu', name='fpnmask_relu_act3')(x)
+    x = get_relu(name='fpnmask_relu_act3', leaky=leaky_relu)(x)
 
     x = tdistr_bn4(tdistr_conv4(x))
-    x = tfl.Activation('relu', name='fpnmask_relu_act4')(x)
+    x = get_relu(name='fpnmask_relu_act4', leaky=leaky_relu)(x)
 
     x = tdistr_deconv(x)
     x = tdistr_mrcnn_mask(x)
@@ -1917,24 +1972,36 @@ def fpn_mask_graph(inputs, pool_size, num_classes, train_bn):
     return x
 
 
+def get_relu(name, leaky=False, alpha=0.3):
+    if leaky:
+        act_function = tfl.LeakyReLU(name=name, alpha=alpha)
+    else:
+        act_function = tfl.Activation('relu', name=name)
+    return act_function
+
+
 class MaskRCNNBackbone:
-    def __init__(self, backbone_name, weights, input_shape):
+    def __init__(self, config):
         """
         Mask-RCNN backbones manager
         Args:
-            backbone_name: Mask-RCNN backbone name, str
-            weights:       Pretrained weights name, str
-            input_shape:   Input image shape, list of ints
+            config:        General model config
         """
         super(MaskRCNNBackbone, self).__init__()
-        self.backbone_name = backbone_name
-        self.weights = weights
-        self.input_shape = input_shape
+        self.backbone_name = config['backbone']
+        self.input_shape = config['image_shape']
+        self.weights = config['backbone_init_weights']
+        self.frozen = config['frozen_backbone']
+        self.config = config
         self.preprocess_input = None
         self.backbone = None
-        self._backbone_list = ['resnet18', 'resnet34', 'resnet50', 'resnet101',
+        self._backbone_list = ['resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152',
                                'mobilenet', 'mobilenetv2',
                                'efficientnetb0', 'efficientnetb1', 'efficientnetb2', 'efficientnetb3',
+                               'efficientnetb4', 'efficientnetb5', 'efficientnetb6', 'efficientnetb7',
+                               'seresnet18', 'seresnet34', 'seresnet50', 'seresnet101', 'seresnet152',
+                               'seresnext50', 'seresnext101', 'senet154',
+                               'resnext50', 'resnext101'
                                ]
 
         self.backbone_outputs = {
@@ -1942,18 +2009,35 @@ class MaskRCNNBackbone:
             'resnet34': ['pooling0', 'stage2_unit1_relu1', 'stage3_unit1_relu1', 'stage4_unit1_relu1', 'relu1'],
             'resnet50': ['pooling0', 'stage2_unit1_relu1', 'stage3_unit1_relu1', 'stage4_unit1_relu1', 'relu1'],
             'resnet101': ['pooling0', 'stage2_unit1_relu1', 'stage3_unit1_relu1', 'stage4_unit1_relu1', 'relu1'],
+            'resnet152': ['pooling0', 'stage2_unit1_relu1', 'stage3_unit1_relu1', 'stage4_unit1_relu1', 'relu1'],
 
             'mobilenet': ['conv_pw_1_relu', 'conv_pw_3_relu', 'conv_pw_5_relu',
                           'conv_pw_10_relu', 'conv_pw_13_relu'],
             'mobilenetv2': ['block_1_expand_relu', 'block_3_expand_relu', 'block_6_expand_relu',
                             'block_13_expand_relu', 'out_relu'],
 
+            'seresnet18': ['pooling0', 'stage2_unit1_relu1', 'stage3_unit1_relu1', 'stage4_unit1_relu1', 'relu1'],
+            'seresnet34': ['pooling0', 'stage2_unit1_relu1', 'stage3_unit1_relu1', 'stage4_unit1_relu1', 'relu1'],
+
+            'seresnet50': ['max_pooling2d', 'activation_15', 'activation_35', 'activation_65', 'activation_80'],
+            'seresnet101': ['max_pooling2d', 'activation_15', 'activation_35', 'activation_150', 'activation_165'],
+            'seresnet152': ['max_pooling2d', 'activation_15', 'activation_55', 'activation_235', 'activation_250'],
+
+            'seresnext50': ['max_pooling2d', 'activation_15', 'activation_35', 'activation_65', 'activation_80'],
+            'seresnext101': ['max_pooling2d', 'activation_16', 'activation_36', 'activation_151', 'activation_165'],
+            'senet154': ['max_pooling2d', 'activation_13', 'activation_54', 'activation_238', 'activation_252'],
+
+            'resnext50': ['pooling0', 'stage2_unit1_relu1', 'stage3_unit1_relu1',
+                          'stage4_unit1_relu1', 'stage4_unit3_relu'],
+            'resnext101': ['pooling0', 'stage2_unit1_relu1', 'stage3_unit1_relu1',
+                           'stage4_unit1_relu1', 'stage4_unit3_relu']
+
         }
 
         self.backbone_outputs.update(
             {f'efficientnetb{i}': ['block2a_activation', 'block3a_expand_activation',
                                    'block4a_expand_activation', 'block6a_expand_activation',
-                                   'top_activation'] for i in [0, 1, 2, 3]}
+                                   'top_activation'] for i in range(8)}
         )
 
         if self.backbone_name not in self._backbone_list:
@@ -1965,17 +2049,41 @@ class MaskRCNNBackbone:
                            'efficientnetb1': efn.EfficientNetB1,
                            'efficientnetb2': efn.EfficientNetB2,
                            'efficientnetb3': efn.EfficientNetB3,
+                           'efficientnetb4': efn.EfficientNetB4,
+                           'efficientnetb5': efn.EfficientNetB5,
+                           'efficientnetb6': efn.EfficientNetB6,
+                           'efficientnetb7': efn.EfficientNetB7,
                            }
         if 'efficientnet' in self.backbone_name:
             # EfficientNets
             model = _effnet_mapping[self.backbone_name](input_shape=self.input_shape,
                                                         weights=self.weights,
                                                         include_top=False)
-        else:
-            # ResNets, MobileNets
+        elif 'resnet' in self.backbone_name or\
+                'resnext' in self.backbone_name or\
+                'seresnet' in self.backbone_name or\
+                'seresnext' in self.backbone_name or\
+                'senet' in self.backbone_name:
+
+            # ResNets, ResNeXts, SE-ResNets, SE-ResNeXt, SeNet
             model_class, preprocess_input = Classifiers.get(self.backbone_name)
-            model = model_class(input_shape=self.input_shape, weights=self.weights, include_top=False)
+            model = model_class(input_shape=self.input_shape,
+                                weights=self.weights,
+                                leaky_relu=self.config['resnet_leaky_relu'],
+                                include_top=False
+                                )
             self.preprocess_input = preprocess_input
+        elif 'mobilenet' in self.backbone_name:
+            # MobileNets
+            model_class, preprocess_input = Classifiers.get(self.backbone_name)
+            model = model_class(input_shape=self.input_shape,
+                                weights=self.weights,
+                                include_top=False
+                                )
+
+            self.preprocess_input = preprocess_input
+        else:
+            raise ValueError(f'Unknown backbone: {self.backbone_name}\nAvailable: {self.backbone_name}')
 
         return model
 
@@ -1996,4 +2104,8 @@ class MaskRCNNBackbone:
         return self.backbone
 
     def build(self):
-        return self._choose_backbone()
+        bbone = self._choose_backbone()
+        if self.frozen:
+            print(f'[MaskRCNN] The model backbone is frozen. Backbone weights: {self.weights}')
+            bbone.trainable = False
+        return bbone

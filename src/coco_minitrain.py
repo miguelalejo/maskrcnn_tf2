@@ -5,6 +5,7 @@ import tensorflow as tf
 
 from common.utils import tf_limit_gpu_memory
 from model import mask_rcnn_functional
+from preprocess import preprocess as prep
 from preprocess import augmentation as aug
 from samples.coco import coco
 from training import train_model
@@ -58,12 +59,10 @@ if __name__ == '__main__':
                                      class_ids=[1, 2, 3, 4],
                                      year=2017,
                                      auto_download=False,
-
-                                     # SegmentationDataset necessary parent attributes
-                                     augmentation=aug.get_training_augmentation(
-                                         image_size=CONFIG['img_size'],
+                                     preprocess_transform=prep.get_input_preprocess(
                                          normalize=CONFIG['normalization']
                                      ),
+                                     augmentation=aug.get_training_augmentation(),
                                      **CONFIG
                                      )
 
@@ -72,10 +71,7 @@ if __name__ == '__main__':
                                    class_ids=[1, 2, 3, 4],
                                    year=2017,
                                    auto_download=False,
-
-                                   # SegmentationDataset necessary parent attributes
-                                   augmentation=aug.get_validation_augmentation(
-                                       image_size=CONFIG['img_size'],
+                                   preprocess_transform=prep.get_input_preprocess(
                                        normalize=CONFIG['normalization']
                                    ),
                                    **CONFIG

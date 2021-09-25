@@ -673,19 +673,6 @@ def build_detection_targets(rpn_rois, gt_class_ids, gt_boxes, gt_masks,
     return rois, roi_gt_class_ids, bboxes, masks
 
 
-def normalize_image(img):
-    """
-    Normalize image
-    Args:
-        img: np.array
-    Returns: np.array
-    """
-    img = img.astype(np.float32)
-    img -= np.amin(img)
-    img /= np.amax(img)
-    return img
-
-
 def mold_image(images, mean_pixel):
     """Expects an RGB image (or array of images) and subtracts
     the mean pixel and converts it to float. Expects image

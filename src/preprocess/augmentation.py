@@ -1,21 +1,19 @@
 import albumentations as img_album
 
 
-def get_training_augmentation(image_size, weather=False, flips=True, extend_aug=False, normalize=None):
+def get_training_augmentation(weather=False, flips=True, extend_aug=False):
     """
     Training augmentation pipeline
     Args:
-        image_size:  int, input image size
         weather:     bool, use weather augmentation or not
         flips:       bool, use horizontal and vertical flipping or not
         extend_aug:  bool, use additional augmentation operations
-        normalize:   dict, config in config.py with image normalization params: mean, std
 
     Returns: albumentations augmentation pipeline
 
     """
     base_transform_list = [
-        img_album.GaussianBlur(blur_limit=5, p=0.5),
+        img_album.GaussianBlur(p=0.5),
         img_album.Rotate(limit=(10, 270)),
         img_album.MultiplicativeNoise(multiplier=(0.5, 1.2)),
         img_album.ChannelShuffle(p=0.5),
@@ -57,34 +55,7 @@ def get_training_augmentation(image_size, weather=False, flips=True, extend_aug=
 
     train_transform.append(img_album.Lambda(mask=round_clip_0_1))
 
-    if normalize:
-        # After normalization change array back to unit8 for further augmentation
-        train_transform.insert(0, img_album.Lambda(image=denorm_image))
-        train_transform.insert(0, img_album.Normalize(mean=normalize['mean'],
-                                                      std=normalize['std'],
-                                                      max_pixel_value=255.0,
-                                                      always_apply=True,
-                                                      p=1.0)
-
-                               )
-
     return img_album.Compose(train_transform)
-
-
-def get_validation_augmentation(image_size, normalize=None):
-    """Add paddings to make image shape divisible by 32"""
-
-    test_transform = [
-        img_album.Resize(height=image_size, width=image_size)
-    ]
-    if normalize:
-        test_transform.extend([img_album.Normalize(mean=normalize['mean'],
-                                                   std=normalize['std'],
-                                                   max_pixel_value=255.0,
-                                                   always_apply=True)
-                               ])
-
-    return img_album.Compose(test_transform)
 
 
 def get_preprocessing(preprocessing_fn):
@@ -106,7 +77,3 @@ def get_preprocessing(preprocessing_fn):
 
 def round_clip_0_1(x, **kwargs):
     return x.round().clip(0, 1)
-
-
-def denorm_image(x, **kwargs):
-    return (x * 255).astype('uint8')

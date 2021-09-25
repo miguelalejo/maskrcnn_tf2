@@ -52,8 +52,10 @@ Thumbs.db
 
 *.onnx
 *.ckpt
+*.idea
 
 balloon
+
 
 
 

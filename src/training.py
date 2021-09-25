@@ -43,27 +43,35 @@ def train_model(model, train_dataset, val_dataset, config, weights_path=None, lo
                                            )
 
     # Workaround for multiprocessing with tf.keras.Sequence dataloader wrapped in tf.data.Dataset
-    def make_gen_callable(_gen, config):
+    def make_gen_callable(_gen):
         def gen():
             for inputs, outputs in _gen:
-
                 if config['use_rpn_rois']:
-                    batch_images, batch_images_meta, batch_rpn_match, batch_rpn_bbox, \
+                    batch_images, batch_images_meta, batch_rpn_match, batch_rpn_bbox,\
                     batch_gt_class_ids, batch_gt_boxes, batch_gt_masks = inputs
+
+                    yield batch_images, batch_images_meta, batch_rpn_match, batch_rpn_bbox,\
+                          batch_gt_class_ids, batch_gt_boxes, batch_gt_masks
                 else:
                     batch_images, batch_images_meta, batch_rpn_match, batch_rpn_bbox, \
                     batch_gt_class_ids, batch_gt_boxes, batch_gt_masks, random_rois = inputs
 
-                yield batch_images, batch_images_meta, batch_rpn_match, batch_rpn_bbox, \
-                      batch_gt_class_ids, batch_gt_boxes, batch_gt_masks
-
+                    yield batch_images, batch_images_meta, batch_rpn_match, batch_rpn_bbox,\
+                          batch_gt_class_ids, batch_gt_boxes, batch_gt_masks, random_rois
         return gen
 
-    train_datagen = tf.data.Dataset.from_generator(generator=make_gen_callable(train_dataloader, config),
-                                                   output_types=tuple(tf.float32 for x in range(7))
+    out_len = 7
+    if not config['use_rpn_rois'] and not config['random_rois']:
+        raise ValueError(f"""Set random_rois>0 for use_rpn_rois={config['use_rpn_rois']} option""")
+
+    if not config['use_rpn_rois'] and config['random_rois']:
+        out_len = 8
+
+    train_datagen = tf.data.Dataset.from_generator(generator=make_gen_callable(train_dataloader),
+                                                   output_types=tuple(tf.float32 for x in range(out_len))
                                                    )
-    val_datagen = tf.data.Dataset.from_generator(generator=make_gen_callable(train_dataloader, config),
-                                                 output_types=tuple(tf.float32 for x in range(7))
+    val_datagen = tf.data.Dataset.from_generator(generator=make_gen_callable(train_dataloader),
+                                                 output_types=tuple(tf.float32 for x in range(out_len))
                                                  )
     """
     Initialize losses:
@@ -85,7 +93,9 @@ def train_model(model, train_dataset, val_dataset, config, weights_path=None, lo
     model.compile(optimizer=optimizer, losses_dict=losses_dict, run_eagerly=True)
 
     # Load weights for MaskRCNN created previously during training.
-    tensorboard_logdir = "logs/scalars/" + datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    bbone = config['backbone']
+    tboard_model_folder = f"maskrcnn_{bbone}_" + datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    tensorboard_logdir = os.path.join('..', 'logs', 'scalars', tboard_model_folder)
     initial_epoch = 0
     if weights_path:
         model.load_weights(weights_path)
@@ -97,7 +107,7 @@ def train_model(model, train_dataset, val_dataset, config, weights_path=None, lo
 
     # Prepare training callbacks list
     model_md5_config = hashlib.md5(config.__repr__().encode()).hexdigest()
-    checkpoint_path = os.path.join(config['callback']['log_dir'],
+    checkpoint_path = os.path.join(config['callback']['checkpoints_dir'], tboard_model_folder, 'checkpoints',
                                    'maskrcnn_' + config['backbone'] + f'_{model_md5_config}' + '_cp-{epoch:04d}.ckpt')
     callbacks_list = [
         tf.keras.callbacks.ModelCheckpoint(
@@ -151,7 +161,11 @@ def get_optimizer(kwargs):
     elif opt_name == 'adagrad':
         optimizer = tf.keras.optimizers.Adagrad(**kwargs)
     elif opt_name == 'sgd':
-        tf.keras.optimizers.SGD(**kwargs)
+        optimizer = tf.keras.optimizers.SGD(**kwargs)
+    elif opt_name == 'rmsprop':
+        optimizer = tf.keras.optimizers.RMSprop(**kwargs)
+    elif opt_name == 'ftrl':
+        optimizer = tf.keras.optimizers.Ftrl(**kwargs)
     else:
-        raise NotImplementedError('Only sgd, adam, adamax, adadelta, adagrad optimizers are added.')
+        raise NotImplementedError('Only sgd, adam, adamax, adadelta, adagrad, rmsprop, ftrl optimizers are added.')
     return optimizer
