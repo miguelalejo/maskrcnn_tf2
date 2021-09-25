@@ -56,7 +56,7 @@ class SegmentationDataset:
             self.annotation_dict.update(remapped_annotation_dict)
         else:
             print('None passed to images_dir argument.\n',
-                  'This means that the dataset class is a child of SegmentationDataset and its'
+                  'This means that the dataset class is a child of SegmentationDataset and its '
                   'behaviour differs from datasets created with VGG Image Annotator.\n',
                   'If it is not true, please, check your class arguments carefully.\n')
 
@@ -459,17 +459,34 @@ def get_input_preprocess(normalize=None):
     Input preprocessing
     Args:
         normalize: dict, with normalization parameters: mean, std
+                   If None, max-min normalization will be set
 
     Returns: albumentations.Compose or None
 
     """
-    test_transform = None
     if normalize:
         test_transform = [img_album.Normalize(mean=normalize['mean'],
                                               std=normalize['std'],
                                               max_pixel_value=255.0,
-                                              always_apply=True)
+                                              always_apply=True
+                                              )
                           ]
-        test_transform = img_album.Compose(test_transform)
+    else:
+        test_transform = [img_album.Lambda(image=maxmin_normalize_input)]
+
+    test_transform = img_album.Compose(test_transform)
 
     return test_transform
+
+
+def maxmin_normalize_input(img, **kwargs):
+    """
+    Subtract mean and divide by the range
+    Args:
+        img: np.array
+    Returns: np.array
+    """
+    img = img.astype(np.float32)
+    img -= np.amin(img)
+    img /= np.amax(img)
+    return img

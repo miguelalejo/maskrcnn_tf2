@@ -53,7 +53,7 @@ CONFIG = {
 
     'callback': {
         # TensorBoard callback
-        'log_dir': os.path.join('logs', 'scalars'),
+        'checkpoints_dir': os.path.join('..', 'logs', 'scalars'),
         # ReduceLROnPlateau callback
         'reduce_lr_on_plateau': 0.98,
         'reduce_lr_on_plateau_patience': 10,

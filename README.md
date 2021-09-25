@@ -7,23 +7,29 @@ order to have a choice in balance between accuracy and speed, to make model more
 
 ### Supported Tensorflow versions
 
-* tensorflow v2.2.0
-* tensorflow v2.3.4
-* tensorflow v2.4.3
-* tensorflow v2.5.1
+* v2.2.0, v2.3.4, v2.4.3, v2.5.1
 
 ### Supported backbones ###
 
-* ResNet 18
-* ResNet 34
-* ResNet 50
-* ResNet 101
-* MobileNet
-* MobileNet_V2
-* EfficientNetB0
-* EfficientNetB1
-* EfficientNetB2
-* EfficientNetB3
+* ResNet [18, 34, 50, 101, 152]
+* ResNeXt [50, 101]
+* SE-ResNet [18, 34, 50, 101, 152]
+* SE-ResNeXt [50, 101]
+* SE-Net [154]
+* MobileNet [V1, V2]
+* EfficientNet [B0, B1, B2, B3, B4, B5, B6, B7]
+
+
+      Backbone keys:
+
+      'resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152',
+      'resnext50', 'resnext101',
+      'seresnet18', 'seresnet34', 'seresnet50', 'seresnet101', 'seresnet152',
+      'seresnext50', 'seresnext101', 'senet154',
+      'mobilenet', 'mobilenetv2',
+      'efficientnetb0', 'efficientnetb1', 'efficientnetb2', 'efficientnetb3',
+      'efficientnetb4', 'efficientnetb5', 'efficientnetb6', 'efficientnetb7',
+
 
 ## Getting started
 
@@ -59,8 +65,8 @@ $ pip install <TENSORRT_PATH>/onnx_graphsurgeon/onnx_graphsurgeon-x.y.z-py2.py3-
    on [albumentations](https://github.com/albumentations-team/albumentations) library.
 
    See also:
-    * `./src/notebooks/example_data_loader_balloon.ipynb`
-    * `./src/notebooks/example_data_loader_coco.ipynb`
+    * `./notebooks/example_data_loader_balloon.ipynb`
+    * `./notebooks/example_data_loader_coco.ipynb`
 
 ### Training
 
@@ -180,7 +186,7 @@ train_model(model,
             weights_path=None)
 ```
 
-See `./src/notebooks/example_training_balloon.ipynb`.
+See `./notebooks/example_training_balloon.ipynb`.
 
 MS COCO dataset example:
 
@@ -241,17 +247,17 @@ train_model(model,
             weights_path=None)
 ```
 
-See `./src/notebooks/example_training_coco.ipynb`.
+See `./notebooks/example_training_coco.ipynb`.
 
-4. Logs folder with weights and scalars will appear in `./src/` Monitor training with tensorboard tool:
+4. Logs folder with weights and scalars will appear outside `src`. Monitoring training with tensorboard tool:
 
 ```bash
-$ tensorboard --log_dir=./src/logs
+$ tensorboard --log_dir=logs
 ```
 
 ### Inference
 
-See inference example in `./src/notebooks/example_inference_tf_onnx_trt_balloon.ipynb`
+See inference example in `./notebooks/example_inference_tf_onnx_trt_balloon.ipynb`
 
 ### Inference optimization
 
@@ -278,6 +284,8 @@ __Inference with TensorRT:__
 #### Mask-RCNN with TensorRT >=7.2:
 
 1. Get your TensorRT path: <TENSORRT_PATH>
+
+
 2. Make sure that the following path in ~/.bashrc:
 
    `export LD_LIBRARY_PATH=<TENSORRT_PATH>/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}`
@@ -290,56 +298,71 @@ __Inference with TensorRT:__
 
    `export LD_LIBRARY_PATH=/home/user/TensorRT-7.2.3.4/targets/x86_64-linux-gnu/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}`
 
-3. Generate TensorRT-engine in terminal with trtexec:
-    * Basically, terminal does not recognize trtexec command. You can add to ~/.bashrc path to trtexec with alias:
 
-      `alias trtexec='<TENSORRT_PATH>/bin/trtexec'`
+3. Several layers of MaskRCNN in TensorRT were implemented as special plugins.
+One of them is `proposalLayerPlugin` which contains general parameters to be changed. In this repo parameters are placed in
+`src/common/config.py`. Thus, to configure MaskRCNN special layers in TensorRT,
+it is important to rebuild `nvinfer_plugin` with updated config.
 
-      For successful run `example_tensorflow_to_onnx_tensorrt_balloon.ipynb` add `TRTEXEC` to ~/.bashrc:
+```bash
+# Clone TensorRT OSS
+$ git clone https://github.com/NVIDIA/TensorRT.git
+# Set your TensorRT version by switching the branch. Here is an example for 7.2
+$ cd TensorRT/ && git checkout release/7.2 && git pull
+$ git submodule update --init --recursive
+$ mkdir -p build && cd build
+```
 
-      `export TRTEXEC='<TENSORRT_PATH>/bin/trtexec'`
+3. Open header `TensorRT/plugin/proposalLayerPlugin/mrcnn_config.h` and change Mask-RCNN config according to the trained
+   model configuration that is stored in `src/common/config.py`
 
-    * Update ~/.bashrc:
 
-      `$ source ~/.bashrc`
+4. Learn about your compute capabilities: [Your GPU Compute Capability](https://developer.nvidia.com/cuda-gpus).
+   For example, Nvidia Geforce RTX 2060 has 7.5, `DGPU_ARCHS=75`.
 
-    * Run trtexec:
 
-        * fp32:
-          `trtexec --onnx=<PATH_TO_ONNX_GRAPH> --saveEngine=<PATH_TO_TRT_ENGINE> --workspace=<WORKSPACE_SIZE> --verbose`
-        * fp16:
-          `trtexec --onnx=<PATH_TO_ONNX_GRAPH> --saveEngine=<PATH_TO_TRT_ENGINE> --fp16 --workspace=<WORKSPACE_SIZE> --verbose`
+5. Build `nvinfer_plugin`:
+```bash
+$ cmake .. -DGPU_ARCHS=75 -DTRT_LIB_DIR=<TENSORRT_PATH>/lib -DTRT_OUT_DIR=`pwd`/out -DCMAKE_C_COMPILER=/usr/bin/gcc
+$ make nvinfer_plugin -j$(nproc)
+```
 
-#### Known issues:
 
-    1. TensorRT: `../rtSafe/cublas/cublasLtWrapper.cpp (279) - Assertion Error in getCublasLtHeuristic: 0 (cublasStatus == CUBLAS_STATUS_SUCCESS)`
+6. Copy the `libnvinfer_plugin.so.x.y.z` output to the TensorRT library folder. Don't forget to back up the original build:
+
+```bash
+$ mkdir ~/backups
+$ sudo mv <TensorRT>/lib/libnvinfer_plugin.so.7.2.3 ~/backups/libnvinfer_plugin.so.7.2.3.bak
+$ sudo cp libnvinfer_plugin.so.7.2.3  <TensorRT>/lib/libnvinfer_plugin.so.7.2.3
+# Update links
+$ sudo ldconfig
+# Check that links exist
+$ ldconfig -p | grep libnvinfer
+```
+
+
+7.Generate TensorRT-engine in terminal with trtexec:
+
+ * Basically, terminal does not recognize trtexec command. You can add to ~/.bashrc path to trtexec with alias:
+
+   `alias trtexec='<TENSORRT_PATH>/bin/trtexec'`
+
+   For successful run `example_tensorflow_to_onnx_tensorrt_balloon.ipynb` add `TRTEXEC` to ~/.bashrc:
+
+   `export TRTEXEC='<TENSORRT_PATH>/bin/trtexec'`
+
+ * Update ~/.bashrc:
+
+   `$ source ~/.bashrc`
+
+ * Run trtexec:
+
+     * fp32:
+       `trtexec --onnx=<PATH_TO_ONNX_GRAPH> --saveEngine=<PATH_TO_TRT_ENGINE> --workspace=<WORKSPACE_SIZE> --verbose`
+     * fp16:
+       `trtexec --onnx=<PATH_TO_ONNX_GRAPH> --saveEngine=<PATH_TO_TRT_ENGINE> --fp16 --workspace=<WORKSPACE_SIZE> --verbose`
+     
        
-        * Possible cause: cuda and TensorRT versions mismatch;
-        * Possible workaround if error still exists - remove cublasLt from tacticSources:
-            # fp32:
-              `trtexec --onnx=<PATH_TO_ONNX_GRAPH> --saveEngine=<PATH_TO_TRT_ENGINE> --tacticSources=-cublasLt,+cublas --workspace=<WORKSPACE_SIZE> --verbose`
-            # fp16:
-               `trtexec --onnx=<PATH_TO_ONNX_GRAPH> --saveEngine=<PATH_TO_TRT_ENGINE> --tacticSources=-cublasLt,+cublas --fp16 --workspace=<WORKSPACE_SIZE> --verbose`
-    
-    2. Tensorlfow v2.5: AttributeError: module 'keras.utils' has no attribute 'get_file'
-       
-       * Possible cause: the influence of keras-nightly automatically suggested with tensorflow installation.
-       * Possible workaround:
-         
-         Open __init__.py in <ANACONDA_PATH>/envs/tf2.5/lib/python3.8/site-packages/classification_models
-         
-         Modify file:
-
-         import keras_applications as ka
-         from .__version__ import __version__
-         import tensorflow.keras.utils as utils
-         
-         def get_submodules_from_kwargs(kwargs):
-             backend = kwargs.get('backend', ka._KERAS_BACKEND)
-             layers = kwargs.get('layers', ka._KERAS_LAYERS)
-             models = kwargs.get('models', ka._KERAS_MODELS)
-             return backend, layers, models, utils
-         
 #### Mask-RCNN with NVIDIA Jetson devices. TensorRT=7.1.3:
 
 This [NVIDIA doc](https://docs.nvidia.com/metropolis/TLT/tlt-user-guide/text/object_detection/yolo_v4.html#tensorrt-oss-on-jetson-arm64)
@@ -368,18 +391,18 @@ $ export TRT_SOURCE=`pwd`
 $ mkdir -p build && cd build
 ```
 
-3. Open  `TensorRT/plugin/proposalLayerPlugin/mrcnn_config.h` and change Mask-RCNN configs according to the trained
-   model configuration that is stored in
-   `src/common/config.py`
+3. Open header `TensorRT/plugin/proposalLayerPlugin/mrcnn_config.h` and change Mask-RCNN config according to the trained
+   model configuration that is stored in `src/common/config.py`
 
-4. Build nvinfer_plugin:
+
+4. Build `nvinfer_plugin`:
 
 ```bash
 $ /usr/local/bin/cmake .. -DGPU_ARCHS=72  -DTRT_LIB_DIR=/usr/lib/aarch64-linux-gnu/ -DCMAKE_C_COMPILER=/usr/bin/gcc -DTRT_BIN_DIR=`pwd`/out
 $ make nvinfer_plugin -j$(nproc)
 ```
 
-5. Copy the `libnvinfer_plugin.so.7.1.3` output to the library folder. Don't forget to backup the original build:
+5. Copy the `libnvinfer_plugin.so.7.1.3` output to the library folder. Don't forget to back up the original build:
 
 ```bash
 $ mkdir ~/backups
@@ -524,32 +547,19 @@ Jetson AGX Xavier:
 
 ### TODOs:
 
---- 
-
-* [x] Fix data normalization, 
-* [x] Add backbone name to logs
-* [ ] Check and update all notebooks
-  * example_data_loader_balloon.ipynb
-  * example_data_loader_coco.ipynb
-  * example_training_balloon.ipynb
-  * example_training_coco.ipynb
-* [ ] Update resnets and add leaky_relu to resnets
-* [ ] Update tests
-* [ ] Add resnet152
-* [ ] Add more efficientnets, 
-* [ ] Add mobilenet_v3, 
-* [ ] Add densenet, resnext, SE-ResNet, SE-ResNeXt
-* [ ] Move logs outside the source code
-
-
-* [ ] NCWH support to avoid some transpose and reshape layers to increase total inference speed. Find errors;
-
-* [ ] MS COCO weights for Mask-RCNN with all supported backbones;
-* [ ] Package maskrcnn_tf2 project;
+---
+* [ ] TRT-models profiling;
+* [ ] NCWH support;
+* [ ] Pruning options;
+* [ ] Update inference speed test tables;
+* [ ] MS COCO weights;
 * [ ] Tensorflow v2.6 support;
-* [ ] tf.keras.applications support for most backbones;
 
 ---
+
+### Changelog
+
+[Link to Changelog](CHANGELOG.md)
 
 ### Contributors
 

@@ -4,7 +4,7 @@ import keras_applications as ka
 
 from layers.backbones import resnet_models as rn
 from layers.backbones import senet_models as sn
-from classification_models.models import resnext as rx
+from layers.backbones import resnext_models as rx
 
 
 class ModelsFactory:

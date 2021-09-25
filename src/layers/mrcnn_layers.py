@@ -1942,7 +1942,8 @@ def fpn_mask_graph(inputs, pool_size, num_classes, train_bn, frozen, leaky_relu)
     fpnmask_bn4 = tfl.BatchNormalization(trainable=train_bn, name='fpnmask_bn4')
     tdistr_bn4 = tfl.TimeDistributed(fpnmask_bn4, name='mrcnn_mask_bn4')
 
-    fpnmask_deconv = tfl.Conv2DTranspose(256, (2, 2), strides=2, activation="relu",
+    fpnmask_deconv_act = tf.keras.layers.LeakyReLU() if leaky_relu else 'relu'
+    fpnmask_deconv = tfl.Conv2DTranspose(256, (2, 2), strides=2, activation=fpnmask_deconv_act,
                                          trainable=trainable, name='fpnmask_convt')
     tdistr_deconv = tfl.TimeDistributed(fpnmask_deconv, name="mrcnn_mask_deconv")
 
@@ -1999,6 +2000,8 @@ class MaskRCNNBackbone:
                                'efficientnetb0', 'efficientnetb1', 'efficientnetb2', 'efficientnetb3',
                                'efficientnetb4', 'efficientnetb5', 'efficientnetb6', 'efficientnetb7',
                                'seresnet18', 'seresnet34', 'seresnet50', 'seresnet101', 'seresnet152',
+                               'seresnext50', 'seresnext101', 'senet154',
+                               'resnext50', 'resnext101'
                                ]
 
         self.backbone_outputs = {
@@ -2015,9 +2018,19 @@ class MaskRCNNBackbone:
 
             'seresnet18': ['pooling0', 'stage2_unit1_relu1', 'stage3_unit1_relu1', 'stage4_unit1_relu1', 'relu1'],
             'seresnet34': ['pooling0', 'stage2_unit1_relu1', 'stage3_unit1_relu1', 'stage4_unit1_relu1', 'relu1'],
-            'seresnet50': ['pooling0', 'stage2_unit1_relu1', 'stage3_unit1_relu1', 'stage4_unit1_relu1', 'relu1'],
-            'seresnet101': ['pooling0', 'stage2_unit1_relu1', 'stage3_unit1_relu1', 'stage4_unit1_relu1', 'relu1'],
-            'seresnet152': ['pooling0', 'stage2_unit1_relu1', 'stage3_unit1_relu1', 'stage4_unit1_relu1', 'relu1'],
+
+            'seresnet50': ['max_pooling2d', 'activation_15', 'activation_35', 'activation_65', 'activation_80'],
+            'seresnet101': ['max_pooling2d', 'activation_15', 'activation_35', 'activation_150', 'activation_165'],
+            'seresnet152': ['max_pooling2d', 'activation_15', 'activation_55', 'activation_235', 'activation_250'],
+
+            'seresnext50': ['max_pooling2d', 'activation_15', 'activation_35', 'activation_65', 'activation_80'],
+            'seresnext101': ['max_pooling2d', 'activation_16', 'activation_36', 'activation_151', 'activation_165'],
+            'senet154': ['max_pooling2d', 'activation_13', 'activation_54', 'activation_238', 'activation_252'],
+
+            'resnext50': ['pooling0', 'stage2_unit1_relu1', 'stage3_unit1_relu1',
+                          'stage4_unit1_relu1', 'stage4_unit3_relu'],
+            'resnext101': ['pooling0', 'stage2_unit1_relu1', 'stage3_unit1_relu1',
+                           'stage4_unit1_relu1', 'stage4_unit3_relu']
 
         }
 
@@ -2046,8 +2059,13 @@ class MaskRCNNBackbone:
             model = _effnet_mapping[self.backbone_name](input_shape=self.input_shape,
                                                         weights=self.weights,
                                                         include_top=False)
-        elif 'resnet' in self.backbone_name or 'seresnet' in self.backbone_name:
-            # ResNets, SE-ResNets
+        elif 'resnet' in self.backbone_name or\
+                'resnext' in self.backbone_name or\
+                'seresnet' in self.backbone_name or\
+                'seresnext' in self.backbone_name or\
+                'senet' in self.backbone_name:
+
+            # ResNets, ResNeXts, SE-ResNets, SE-ResNeXt, SeNet
             model_class, preprocess_input = Classifiers.get(self.backbone_name)
             model = model_class(input_shape=self.input_shape,
                                 weights=self.weights,
