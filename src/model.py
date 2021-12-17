@@ -8,7 +8,7 @@ from layers import mrcnn_layers as mrcnnl
 
 
 class FMaskRCNN(tf.keras.Model):
-    def __init__(self, inputs, outputs, config, name='mask_rcnn', **kwargs):
+    def __init__(self, inputs: list, outputs: list, config: dict, name: str = 'mask_rcnn', **kwargs):
         """
         tf.keras.Model for functional Mask-RCNN with overriden train and evaluation methods.
         Args:
@@ -24,7 +24,7 @@ class FMaskRCNN(tf.keras.Model):
         self.losses_dict = {}
         self.losses_tracker_dict = {}
 
-    def compile(self, optimizer, losses_dict=None, run_eagerly=True, **kwargs):
+    def compile(self, optimizer, losses_dict: dict = None, run_eagerly: bool = True, **kwargs):
 
         super(FMaskRCNN, self).compile(optimizer=optimizer, run_eagerly=run_eagerly)
         # Update a dict of losses
@@ -45,7 +45,7 @@ class FMaskRCNN(tf.keras.Model):
         # If you don't implement this property, you have to call `reset_states()` yourself at the time of your choosing.
         return [x for x in self.losses_tracker_dict.values()]
 
-    def train_step(self, inputs):
+    def train_step(self, inputs: list):
 
         # Overriding training step
         if self.config['use_rpn_rois']:
@@ -129,7 +129,7 @@ class FMaskRCNN(tf.keras.Model):
 
         return {m.name: m.result() for m in self.metrics}
 
-    def test_step(self, inputs):
+    def test_step(self, inputs: list):
 
         # Overriding test step
         if self.config['use_rpn_rois']:
@@ -188,7 +188,7 @@ class FMaskRCNN(tf.keras.Model):
         return {m.name: m.result() for m in self.metrics}
 
 
-def mask_rcnn_functional(config):
+def mask_rcnn_functional(config: dict):
     # Construct a model in functional API
 
     # Prevent creating keras names with index increment.
@@ -450,13 +450,16 @@ class MaskRCNN(tf.keras.Model):
                                 train_bn=self.config['train_bn'])
 
         # Build subclassed model
-        self.call([np.random.uniform(size=x) for x in [(self.config['batch_size'], 512, 512, 3),
-                                                       (self.config['batch_size'], 14),
-                                                       (self.config['batch_size'], 65472, 1),
-                                                       (self.config['batch_size'], 256, 4),
-                                                       (self.config['batch_size'], 100),
-                                                       (self.config['batch_size'], 100, 4),
-                                                       (self.config['batch_size'], 512, 512, 100),
+        self.call([np.random.uniform(size=x) for x in [(self.config['batch_size'], *self.config['image_shape']),
+                                                       (self.config['batch_size'], *self.config['meta_shape']),
+                                                       (self.config['batch_size'], self.anchors.shape[0], 1),
+                                                       (self.config['batch_size'],
+                                                        self.config['rpn_train_anchors_per_image'], 4),
+                                                       (self.config['batch_size'], self.config['max_gt_instances']),
+                                                       (self.config['batch_size'], self.config['max_gt_instances'], 4),
+                                                       (self.config['batch_size'],
+                                                        *self.config['image_shape'][:2],
+                                                        self.config['max_gt_instances']),
                                                        ]
                    ]
                   )

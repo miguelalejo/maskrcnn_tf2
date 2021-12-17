@@ -2,19 +2,23 @@ import json
 import os
 import warnings
 
+import albumentations
 import cv2
 import albumentations as img_album
 import numpy as np
 import scipy
 from common import utils
+from typing import Tuple
 from tensorflow import cast
 from tensorflow.keras.utils import Sequence
 
 
 class SegmentationDataset:
 
-    def __init__(self, images_dir=None, class_key='object', augmentation=None,
-                 preprocess_transform=False, json_annotation_key='_via_img_metadata', **kwargs):
+    def __init__(self, images_dir: str = None, class_key: str = 'object',
+                 augmentation: albumentations.Compose = None,
+                 preprocess_transform: albumentations.Compose = None,
+                 json_annotation_key: str = '_via_img_metadata', verbose: bool = False, **kwargs):
         """
         Dataset class for VGG Image Annotator. Read images, apply augmentation and preprocessing transformations.
         Args:
@@ -31,6 +35,7 @@ class SegmentationDataset:
         self.kwargs = kwargs
         self.class_key = class_key
         self.json_annotation_key = json_annotation_key
+        self.verbose = verbose
 
         if images_dir:
             self.images_names = [x for x in os.listdir(images_dir) if '.json' not in x]
@@ -73,8 +78,11 @@ class SegmentationDataset:
                                                       feature_strides=self.kwargs['backbone_strides'],
                                                       anchor_stride=self.kwargs['rpn_anchor_stride']
                                                       )
+        if self.verbose:
+            print(f'Backbone shapes: {self.backbone_shapes}')
+            print(f'Anchors: {self.anchors.shape}')
 
-    def get_points_from_annotation(self, annotation_key):
+    def get_points_from_annotation(self, annotation_key: str) -> Tuple[list, list]:
         """
          Get polygon points for a segment. [[x1,y1], [x2, y2], ....[]]
         Example:
@@ -127,7 +135,7 @@ class SegmentationDataset:
 
         return polygon_data_list, class_id_list
 
-    def create_mask(self, image, idx):
+    def create_mask(self, image: np.ndarray, idx: int) -> Tuple[np.ndarray, np.ndarray]:
         """
         Create mask image from VGG Image Annotator metadata
         Args:
@@ -149,10 +157,11 @@ class SegmentationDataset:
         class_ids_array = np.array(class_id_list, dtype=np.int32)
         return masks_array, class_ids_array
 
-    def load_image(self, image_id):
+    def load_image(self, image_id: int) -> np.ndarray:
         return cv2.imread(self.images_fps[image_id])
 
-    def resize_mask(self, mask, scale, padding, crop=None):
+    def resize_mask(self, mask: np.ndarray, scale: float, padding: int,
+                    crop: Tuple[int, int, int, int] = None) -> np.ndarray:
         """Resizes a mask using the given scale and padding.
         Typically, you get the scale and padding from resize_image() to
         ensure both, the image and the mask, are resized consistently.
@@ -173,22 +182,22 @@ class SegmentationDataset:
             mask = np.pad(mask, padding, mode='constant', constant_values=0)
         return mask
 
-    def __getitem__(self, id):
+    def __getitem__(self, idx: int):
         """
         Generate item
         Args:
-            id: index of the image to read
+            idx: index of the image to read
         Returns: image, mask, bbox, image_meta, class_ids
 
         """
-        image = self.load_image(id)  # Read image
+        image = self.load_image(idx)  # Read image
         original_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)  # Image to RGB color space
         original_image_shape = original_image.shape
 
         if self.preprocess_transform:
             image = self.preprocess_transform(image=original_image)['image']
 
-        original_masks_array, class_ids_array = self.create_mask(image, id)  # Create image masks from annotation
+        original_masks_array, class_ids_array = self.create_mask(image, idx)  # Create image masks from annotation
 
         image, window, scale, padding, crop = utils.resize_image(
             image,
@@ -244,7 +253,7 @@ class SegmentationDataset:
             proc_masks = utils.minimize_mask(bboxes, proc_masks, self.kwargs['mini_mask_shape'])
 
         # Image meta data
-        image_meta = utils.compose_image_meta(id, original_image_shape, window, scale, active_class_ids, self.kwargs)
+        image_meta = utils.compose_image_meta(idx, original_image_shape, window, scale, active_class_ids, self.kwargs)
 
         return proc_image, proc_masks, proc_class_ids, bboxes, image_meta, \
                original_image, original_masks_array, original_class_ids, original_bboxes
@@ -258,18 +267,18 @@ class DataLoader(Sequence):
 
     Args:
         dataset:    Instance of Dataset class for image loading and preprocessing.
-        detection_targets: If True, generate detection targets (class IDs, bbox
+        detection_targets: bool, If True, generate detection targets (class IDs, bbox
                            deltas, and masks). Typically for debugging or visualizations because
                            in training detection targets are generated by DetectionTargetLayer.
-        shuffle:    Boolean, if `True` shuffle image indexes each epoch.
-        seed:       Seed for pseudo-random generator
-        name:       DataLoader name
-        cast_output: Cast output to tensorflow.float32
+        shuffle:     bool, if `True` shuffle image indexes each epoch.
+        seed:        int, Seed for pseudo-random generator
+        name:        str, DataLoader name
+        cast_output: bool, Cast output to tensorflow.float32
         return_original: Return original images in batch
     """
 
-    def __init__(self, dataset, detection_targets=False, shuffle=True, seed=42, name='dataloader',
-                 cast_output=True, return_original=False, **kwargs):
+    def __init__(self, dataset, detection_targets: bool = False, shuffle: bool = True, seed: int = 42,
+                 name: str = 'dataloader', cast_output: bool = True, return_original: bool = False, **kwargs):
 
         self.seed = seed
         np.random.seed(self.seed)
@@ -289,22 +298,23 @@ class DataLoader(Sequence):
         self.on_epoch_end()
 
         self.name = name
-        self.steps_per_epoch = self.__len__() // self.batch_size
+        self.steps_per_epoch = self.__len__()
         print(f'{self.name} DataLoader. Steps per epoch: {self.steps_per_epoch}')
 
-    def generate_batch(self, index):
+    def generate_batch(self, index: int):
         """
         Args:
             index: int to get an image
 
         Returns: python list
-                   'batch_images':       tf.random.uniform(shape=(batch, 512, 512, 3),   dtype=tf.float32),
-                   'batch_images_meta':  tf.random.uniform(shape=(batch, 14),            dtype=tf.float32),
-                   'batch_rpn_match':    tf.random.uniform(shape=(batch, 65472, 1),      dtype=tf.float32),
-                   'batch_rpn_bbox':     tf.random.uniform(shape=(batch, 256, 4),        dtype=tf.float32),
-                   'batch_gt_class_ids': tf.random.uniform(shape=(batch, 100),           dtype=tf.float32),
-                   'batch_gt_boxes':     tf.random.uniform(shape=(batch, 100, 4),        dtype=tf.float32),
-                   'batch_gt_masks':     tf.random.uniform(shape=(batch, 512, 512, 100), dtype=tf.float32),
+                    Example, input: (batch, w,h, 3):
+                   'batch_images':       (batch, w, h, 3)
+                   'batch_images_meta':  (batch, meta_shape)
+                   'batch_rpn_match':    (batch, anchors, 1)
+                   'batch_rpn_bbox':     (batch, rpn_train_anchors_per_image, 4)
+                   'batch_gt_class_ids': (batch, max_gt_instances)
+                   'batch_gt_boxes':     (batch, max_gt_instances, 4)
+                   'batch_gt_masks':     (batch, w, h, max_gt_instances)
 
         """
         # Set batch size counter
@@ -436,17 +446,20 @@ class DataLoader(Sequence):
 
         return inputs, outputs
 
-    def __getitem__(self, i):
+    def __getitem__(self, i: int) -> Tuple[list, list]:
         inputs, outputs = self.generate_batch(i)
         return inputs, outputs
 
     def __len__(self):
-        """Denotes the number of batches per epoch"""
+        """
+        Denotes the number of batches per epoch
+        Returns:
+        """
         return int(np.floor(len(self.indexes) / self.batch_size))
 
     def on_epoch_end(self):
         """
-        Обновление порядка данных после каждой эпохи
+        Data shuffling after each epoch
         Returns: None
         """
         self.indexes = np.arange(len(self.dataset))
@@ -454,7 +467,7 @@ class DataLoader(Sequence):
             np.random.shuffle(self.indexes)
 
 
-def get_input_preprocess(normalize=None):
+def get_input_preprocess(normalize: dict = None) -> img_album.Compose:
     """
     Input preprocessing
     Args:
@@ -479,12 +492,12 @@ def get_input_preprocess(normalize=None):
     return test_transform
 
 
-def maxmin_normalize_input(img, **kwargs):
+def maxmin_normalize_input(img: np.ndarray, **kwargs) -> np.ndarray:
     """
-    Subtract mean and divide by the range
+    Subtract min, divide by max
     Args:
-        img: np.array
-    Returns: np.array
+        img: np.ndarray
+    Returns: np.ndarray
     """
     img = img.astype(np.float32)
     img -= np.amin(img)

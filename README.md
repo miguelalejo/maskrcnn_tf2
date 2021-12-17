@@ -550,7 +550,9 @@ Jetson AGX Xavier:
 ---
 * [ ] TRT-models profiling;
 * [ ] NCWH support;
+* [ ] Mixed precision training;
 * [ ] Pruning options;
+* [ ] EfficientNets 
 * [ ] Update inference speed test tables;
 * [ ] MS COCO weights;
 * [ ] Tensorflow v2.6 support;
