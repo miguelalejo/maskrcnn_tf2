@@ -61,3 +61,10 @@ All notable changes to the maskrcnn with tensorflow 2 will be documented in this
    
 - `senet154`, `efficientnetb5`, `efficientnetb6`, `efficientnetb7` backbones are not tested enough for now because of the 
   high GPU memory consumption. Thus, the model with `senet154` backbone may be not supported for ONNX graph modification.
+
+## [Unreleased] - 2021-12-17
+
+### Fixed
+
+* `steps_per_epoch` calculation in  `src/preprocess/preprocess.py`. 
+   [Related issue](https://github.com/alexander-pv/maskrcnn_tf2/issues/9).

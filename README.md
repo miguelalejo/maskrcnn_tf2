@@ -40,7 +40,7 @@ order to have a choice in balance between accuracy and speed, to make model more
 # For example, Tensorflow 2.2 env:
 $ conda create -n tf2.2 python=3.7
 $ conda activate tf2.2
-$ pip install -r requirements_tf2.2.txt
+$ cd ./requirements && pip install -r requirements_tf2.2.txt
 
 # You may also need onnx_graphsurgeon and tensorrt python binding for TensorRT optimization
 $ pip install <TENSORRT_PATH>/python/<TENSORRT_PYTHON_BINDING.whl>
