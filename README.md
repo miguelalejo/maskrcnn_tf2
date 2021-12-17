@@ -552,7 +552,7 @@ Jetson AGX Xavier:
 * [ ] NCWH support;
 * [ ] Mixed precision training;
 * [ ] Pruning options;
-* [ ] EfficientNets 
+* [ ] Flexible backbones configuration;
 * [ ] Update inference speed test tables;
 * [ ] MS COCO weights;
 * [ ] Tensorflow v2.6 support;
