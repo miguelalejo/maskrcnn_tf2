@@ -69,11 +69,15 @@ def train_model(model, train_dataset, val_dataset, config, weights_path=None, lo
         out_len = 8
 
     train_datagen = tf.data.Dataset.from_generator(generator=make_gen_callable(train_dataloader),
-                                                   output_types=tuple(tf.float32 for x in range(out_len))
-                                                   )
+                                                   output_types=tuple(tf.float32 for _ in range(out_len)))
     val_datagen = tf.data.Dataset.from_generator(generator=make_gen_callable(train_dataloader),
-                                                 output_types=tuple(tf.float32 for x in range(out_len))
-                                                 )
+                                                 output_types=tuple(tf.float32 for _ in range(out_len)))
+
+    train_datagen, val_datagen = train_datagen.repeat(), val_datagen.repeat()
+    if config['use_prefetch']:
+        train_datagen = train_datagen.prefetch(config['prefetch_buff_size'])
+        val_datagen = val_datagen.prefetch(config['prefetch_buff_size'])
+
     """
     Initialize losses:
     rpn_class_loss :   How well the Region Proposal Network separates background with objects
@@ -130,9 +134,9 @@ def train_model(model, train_dataset, val_dataset, config, weights_path=None, lo
                                        )
     ]
 
-    model.fit(train_datagen.repeat(),
+    model.fit(train_datagen,#train_datagen.repeat(),
               steps_per_epoch=train_dataloader.steps_per_epoch,
-              validation_data=val_datagen.repeat(),
+              validation_data=val_datagen,#val_datagen.repeat(),
               validation_steps=val_dataloader.steps_per_epoch,
               epochs=config['epochs'],
               initial_epoch=initial_epoch,

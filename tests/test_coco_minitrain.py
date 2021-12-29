@@ -2,7 +2,8 @@ import sys
 import time
 
 sys.path.append('../src')
-import coco_minitrain
+from coco_minitrain import coco_minitrain
+from samples.coco import coco
 from typing import Callable
 
 
@@ -24,8 +25,7 @@ def timing(func: Callable):
 
 @timing
 def test_coco_mini() -> None:
-    args = coco_minitrain.parse_arguments()
-    coco_minitrain.coco_mini(args)
+    coco_minitrain(coco.coco_parse_arguments())
 
 
 if __name__ == '__main__':

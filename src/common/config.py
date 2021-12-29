@@ -51,6 +51,8 @@ CONFIG = {
     'use_multiprocessing': True,
     'workers': mp.cpu_count() // 2,
     'queue_multiplier': 20,
+    'use_prefetch': False,
+    'prefetch_buff_size': 10,
 
     'callback': {
         # TensorBoard callback
