@@ -68,22 +68,22 @@ class SegmentationDataset:
                 '\nIf it is not true, please, check your class arguments carefully.'
             )
 
-            # Get class indexes from class_dict
-            self.classes_dict = self.kwargs['class_dict']
-            self.class_values = list(self.classes_dict.values())
-            self.augmentation = augmentation
-            self.preprocess_transform = preprocess_transform
+        # Get class indexes from class_dict
+        self.classes_dict = self.kwargs['class_dict']
+        self.class_values = list(self.classes_dict.values())
+        self.augmentation = augmentation
+        self.preprocess_transform = preprocess_transform
 
-            self.backbone_shapes = utils.compute_backbone_shapes(self.kwargs)
-            self.anchors = utils.generate_pyramid_anchors(scales=self.kwargs['rpn_anchor_scales'],
-                                                          ratios=self.kwargs['rpn_anchor_ratios'],
-                                                          feature_shapes=self.backbone_shapes,
-                                                          feature_strides=self.kwargs['backbone_strides'],
-                                                          anchor_stride=self.kwargs['rpn_anchor_stride']
-                                                          )
-            if self.verbose:
-                print(f'\nBackbone shapes: {self.backbone_shapes}')
-                print(f'\nAnchors: {self.anchors.shape}')
+        self.backbone_shapes = utils.compute_backbone_shapes(self.kwargs)
+        self.anchors = utils.generate_pyramid_anchors(scales=self.kwargs['rpn_anchor_scales'],
+                                                      ratios=self.kwargs['rpn_anchor_ratios'],
+                                                      feature_shapes=self.backbone_shapes,
+                                                      feature_strides=self.kwargs['backbone_strides'],
+                                                      anchor_stride=self.kwargs['rpn_anchor_stride']
+                                                      )
+        if self.verbose:
+            print(f'\nBackbone shapes: {self.backbone_shapes}')
+            print(f'\nAnchors: {self.anchors.shape}')
 
     def get_points_from_annotation(self, annotation_key: str) -> Tuple[list, list]:
         """

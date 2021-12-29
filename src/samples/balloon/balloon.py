@@ -2,9 +2,7 @@ import numpy as np
 
 from preprocess import preprocess
 
-BALLOON_CONFIG = {'class_dict': {'balloon': 1, 'background': 0},
-                 'num_classes': 2,
-                 }
+BALLOON_CONFIG = {'class_dict': {'balloon': 1, 'background': 0}, 'num_classes': 2, }
 BALLOON_CONFIG.update({'meta_shape': 1 + 3 + 3 + 4 + 1 + BALLOON_CONFIG['num_classes']})
 
 
@@ -34,9 +32,7 @@ class BalloonDataset(preprocess.SegmentationDataset):
                       f"""annotation_key: {annotation_key}\n_region_list: {region['shape_attributes']}\n""")
                 continue
             polygon_points = [[x, y] for x, y in zip(region['shape_attributes']['all_points_x'],
-                                                     region['shape_attributes']['all_points_y']
-                                                     )
-                              ]
+                                                     region['shape_attributes']['all_points_y'])]
             polygon_data_list.append(np.array([polygon_points]))
 
             # If there is no any keyfields for classes, mark everything as class 1
