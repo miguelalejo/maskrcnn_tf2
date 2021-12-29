@@ -151,7 +151,8 @@ CONFIG = {
     # L2 regularization param
     'weight_decay': 0.0002,
     # Use it for batch sizes > 1
-    'train_bn': False,
+    'train_bn': True,
+    'train_bn_backbone': True,
     'l2_reg_batchnorm': False,
 
     # Additional params

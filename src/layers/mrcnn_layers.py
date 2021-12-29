@@ -1,3 +1,5 @@
+import re
+
 import efficientnet.keras as efn
 import numpy as np
 import tensorflow as tf
@@ -39,443 +41,6 @@ class NormBoxesLayer(tfl.Layer):
     def get_config(self):
         config = super(NormBoxesLayer, self).get_config()
         config.update({"shift": self.shift, 'const': self.const})
-        return config
-
-
-@tf.keras.utils.register_keras_serializable()
-class ResnetConvBlock(tfl.Layer):
-    def __init__(self, filters, kernel_size=3, strides=(2, 2), use_bias=True,
-                 train_bn=True, name='resnet_conv_block', **kwargs):
-        """
-        Args:
-            kernel_size: default 3, the kernel size of middle conv layer at main path
-            filters:     list of integers, the nb_filters of 3 conv layer at main path
-            strides:     strides for shortcut
-            use_bias:    Boolean. To use or not use a bias in conv layers.
-            name:        block name
-            **kwargs:
-
-        Note that from stage 3, the first conv layer at main path is with subsample=(2,2)
-        And the shortcut should have subsample=(2,2) as well
-        """
-        super(ResnetConvBlock, self).__init__(name=name, **kwargs)
-        self.filters = filters
-        self.kernel_size = kernel_size
-        self.strides = strides
-        filters1, filters2, filters3 = self.filters
-
-        self.conv2a = tf.keras.layers.Conv2D(filters1, kernel_size=(1, 1), strides=strides, use_bias=use_bias)
-        self.bn2a = tf.keras.layers.BatchNormalization(trainable=train_bn)
-
-        self.conv2b = tf.keras.layers.Conv2D(filters2, kernel_size=kernel_size, padding='same', use_bias=use_bias)
-        self.bn2b = tf.keras.layers.BatchNormalization(trainable=train_bn)
-
-        self.conv2c = tf.keras.layers.Conv2D(filters3, kernel_size=(1, 1), use_bias=use_bias)
-        self.bn2c = tf.keras.layers.BatchNormalization(trainable=train_bn)
-
-        self.conv_shortcut = tf.keras.layers.Conv2D(filters3, kernel_size=(1, 1), strides=strides, use_bias=use_bias)
-        self.bn2_sc = tf.keras.layers.BatchNormalization(trainable=train_bn)
-
-    def build(self, input_shape):
-        self.built = True
-        super(ResnetConvBlock, self).build(input_shape)
-
-    def call(self, inputs, **kwargs):
-        x = self.conv2a(inputs)
-        x = self.bn2a(x)
-        x = tf.nn.relu(x)
-
-        x = self.conv2b(x)
-        x = self.bn2b(x)
-        x = tf.nn.relu(x)
-
-        x = self.conv2c(x)
-        x = self.bn2c(x)
-
-        shortcut = self.conv_shortcut(inputs)
-        shortcut = self.bn2_sc(shortcut)
-
-        x += shortcut
-        return tf.nn.relu(x)
-
-    def get_config(self):
-        config = super(ResnetConvBlock, self).get_config()
-        config.update({'filters': self.filters, 'kernel_size': self.kernel_size, 'strides': self.strides})
-        return config
-
-
-@tf.keras.utils.register_keras_serializable()
-class ResnetConvBlockSmall(tfl.Layer):
-
-    def __init__(self, filter_size, kernel_size=3, strides=(2, 2), use_bias=True,
-                 train_bn=True, name='resnet_conv_block_small', **kwargs):
-        """
-        Block for resnet18 and resnet34
-        Args:
-            filter_size:
-            kernel_size:
-            strides:
-            use_bias:
-            train_bn:
-            name:
-            **kwargs:
-        """
-        super(ResnetConvBlockSmall, self).__init__(name=name, **kwargs)
-        self.filter_size = filter_size
-        self.kernel_size = kernel_size
-        self.strides = strides
-
-        self.conv2a = tf.keras.layers.Conv2D(filters=self.filter_size, kernel_size=self.kernel_size, strides=strides,
-                                             use_bias=use_bias, padding='same')
-        self.bn2a = tf.keras.layers.BatchNormalization(trainable=train_bn)
-
-        self.conv2b = tf.keras.layers.Conv2D(filters=self.filter_size, kernel_size=self.kernel_size,
-                                             use_bias=use_bias, padding='same')
-        self.bn2b = tf.keras.layers.BatchNormalization(trainable=train_bn)
-
-        self.conv_shortcut = tf.keras.layers.Conv2D(filters=self.filter_size, kernel_size=(1, 1), strides=strides,
-                                                    use_bias=use_bias)
-        self.bn2_sc = tf.keras.layers.BatchNormalization(trainable=train_bn)
-
-    def build(self, input_shape):
-        self.built = True
-        super(ResnetConvBlockSmall, self).build(input_shape)
-
-    def call(self, inputs, **kwargs):
-        x = self.conv2a(inputs)
-        x = self.bn2a(x)
-        x = tf.nn.relu(x)
-
-        x = self.conv2b(x)
-        x = self.bn2b(x)
-        x = tf.nn.relu(x)
-
-        shortcut = self.conv_shortcut(inputs)
-        shortcut = self.bn2_sc(shortcut)
-
-        x += shortcut
-        return tf.nn.relu(x)
-
-    def get_config(self):
-        config = super(ResnetConvBlockSmall, self).get_config()
-        config.update({'filter_size': self.filter_size, 'kernel_size': self.kernel_size, 'strides': self.strides})
-        return config
-
-
-@tf.keras.utils.register_keras_serializable()
-class ResnetIdentityBlock(tfl.Layer):
-    def __init__(self, filters, kernel_size=3, use_bias=True,
-                 train_bn=True, name='resnet_identity_block', **kwargs):
-        """
-         Note that from stage 3, the first conv layer at main path is with subsample=(2,2)
-         And the shortcut should have subsample=(2,2) as well
-        Args:
-            kernel_size: default 3, the kernel size of middle conv layer at main path
-            filters:     list of integers, the nb_filters of 3 conv layer at main path
-            use_bias:    Boolean. To use or not use a bias in conv layers.
-            name:        block name
-            **kwargs:
-        """
-        super(ResnetIdentityBlock, self).__init__(name=name, **kwargs)
-        self.filters = filters
-        self.kernel_size = kernel_size
-        filters1, filters2, filters3 = self.filters
-
-        self.conv2a = tf.keras.layers.Conv2D(filters=filters1, kernel_size=(1, 1), use_bias=use_bias)
-        self.bn2a = tf.keras.layers.BatchNormalization(trainable=train_bn)
-
-        self.conv2b = tf.keras.layers.Conv2D(filters=filters2, kernel_size=self.kernel_size, padding='same',
-                                             use_bias=use_bias)
-        self.bn2b = tf.keras.layers.BatchNormalization(trainable=train_bn)
-
-        self.conv2c = tf.keras.layers.Conv2D(filters=filters3, kernel_size=(1, 1), use_bias=use_bias)
-        self.bn2c = tf.keras.layers.BatchNormalization(trainable=train_bn)
-
-    def build(self, input_shape):
-        self.built = True
-        super(ResnetIdentityBlock, self).build(input_shape)
-
-    def call(self, inputs, **kwargs):
-        x = self.conv2a(inputs)
-        x = self.bn2a(x)
-        x = tf.nn.relu(x)
-
-        x = self.conv2b(x)
-        x = self.bn2b(x)
-        x = tf.nn.relu(x)
-
-        x = self.conv2c(x)
-        x = self.bn2c(x)
-
-        x += inputs
-        return tf.nn.relu(x)
-
-    def get_config(self):
-        config = super(ResnetIdentityBlock, self).get_config()
-        config.update({'kernel_size': self.kernel_size, 'filters': self.filters})
-        return config
-
-
-@tf.keras.utils.register_keras_serializable()
-class ResNetIdentityBlockSmall(tfl.Layer):
-
-    def __init__(self, filter_size, kernel_size, use_bias=True,
-                 train_bn=True, name='resnet_identity_block_small', **kwargs):
-        super(ResNetIdentityBlockSmall, self).__init__(name=name, **kwargs)
-        self.filter_size = filter_size
-        self.kernel_size = kernel_size
-
-        self.conv2a = tf.keras.layers.Conv2D(filters=self.filter_size, kernel_size=self.kernel_size, use_bias=use_bias)
-        self.bn2a = tf.keras.layers.BatchNormalization(trainable=train_bn)
-
-        self.conv2b = tf.keras.layers.Conv2D(filters=self.filter_size, kernel_size=self.kernel_size, use_bias=use_bias)
-        self.bn2b = tf.keras.layers.BatchNormalization(trainable=train_bn)
-
-    def build(self, input_shape):
-        self.built = True
-        super(ResNetIdentityBlockSmall, self).build(input_shape)
-
-    def call(self, inputs, **kwargs):
-        x = self.conv2a(inputs)
-        x = self.bn2a(x)
-        x = tf.nn.relu(x)
-
-        x = self.conv2b(x)
-        x = self.bn2b(x)
-
-        x += inputs
-        return tf.nn.relu(x)
-
-    def get_config(self):
-        config = super(ResNetIdentityBlockSmall, self).get_config()
-        config.update({'filter_size': self.filter_size, 'kernel_size': self.kernel_size, })
-        return config
-
-
-@tf.keras.utils.register_keras_serializable()
-class ResNetLayer(tfl.Layer):
-
-    def __init__(self, resnet_type, train_bn, name='resnet_layer', stage5=False, **kwargs):
-        """
-        Build a ResNet graph. https://arxiv.org/pdf/1512.03385.pdf
-        Args:
-            resnet_type: model type
-            name:
-            train_bn:
-            stage5:
-            **kwargs:
-        """
-        super(ResNetLayer, self).__init__(name=name, **kwargs)
-        self.resnet_type = resnet_type
-        self.stage5 = stage5
-        self.stage4_identity_count = {
-            'resnet18': 1,
-            'resnet34': 5,
-            'resnet50': 5,
-            'resnet101': 22}
-        assert self.resnet_type in [f'resnet{i}' for i in [18, 34, 50, 101]]
-
-        # Stage 1
-        self.zero_pad = tfl.ZeroPadding2D((3, 3))
-        self.conv1 = tfl.Conv2D(filters=64, kernel_size=(7, 7), strides=(2, 2), name='conv1', use_bias=True)
-        self.bn_conv1 = tfl.BatchNormalization(name='bn_conv1', trainable=train_bn)
-        self.maxpool1 = tfl.MaxPooling2D((3, 3), strides=(2, 2), padding="same")
-        self.relu = tfl.Activation('relu')
-
-        self.stages_dict = dict()
-
-        if self.resnet_type in ['resnet50', 'resnet101']:
-
-            # Stage 2
-            self.resnet_conv2a = ResnetConvBlock(filters=[64, 64, 256], kernel_size=3, strides=(1, 1),
-                                                 train_bn=train_bn,
-                                                 name='resnet_conv2a')
-            self.resnet_identity2b = ResnetIdentityBlock(filters=[64, 64, 256], kernel_size=3, train_bn=train_bn,
-                                                         name='resnet_identity2b')
-            self.resnet_identity2c = ResnetIdentityBlock(filters=[64, 64, 256], kernel_size=3, train_bn=train_bn,
-                                                         name='resnet_identity2c')
-
-            # Stage 3
-            self.resnet_conv3a = ResnetConvBlock(filters=[128, 128, 512], kernel_size=3, train_bn=train_bn,
-                                                 name='resnet_conv3a')
-            self.resnet_identity3b = ResnetIdentityBlock(filters=[128, 128, 512], kernel_size=3, train_bn=train_bn,
-                                                         name='resnet_identity3b')
-            self.resnet_identity3c = ResnetIdentityBlock(filters=[128, 128, 512], kernel_size=3, train_bn=train_bn,
-                                                         name='resnet_identity3c')
-            self.resnet_identity3d = ResnetIdentityBlock(filters=[128, 128, 512], kernel_size=3, train_bn=train_bn,
-                                                         name='resnet_identity3d')
-
-            # Stage 4
-            self.resnet_conv4a = ResnetConvBlock(filters=[256, 256, 1024], kernel_size=3, train_bn=train_bn)
-            self.resnet_identity4_list = []
-            for i in range(self.stage4_identity_count[self.resnet_type]):
-                self.resnet_identity4_list.append(ResnetIdentityBlock(
-                    filters=[256, 256, 1024], kernel_size=3, train_bn=train_bn)
-                )
-            # Stage 5
-            if self.stage5:
-                self.resnet_conv5a = ResnetConvBlock(filters=[512, 512, 2048], kernel_size=3, train_bn=train_bn)
-                self.resnet_identity5b = ResnetIdentityBlock(filters=[512, 512, 2048], kernel_size=3, train_bn=train_bn)
-                self.resnet_identity5c = ResnetIdentityBlock(filters=[512, 512, 2048], kernel_size=3, train_bn=train_bn)
-
-        elif self.resnet_type == 'resnet34':
-            # Stage 2
-            self.resnet_conv2a = ResnetConvBlockSmall(
-                filter_size=64, kernel_size=3, strides=(1, 1), train_bn=True, name='resnet_conv2a')
-            self.resnet_identity2b = ResNetIdentityBlockSmall(
-                filter_size=64, kernel_size=1, train_bn=True, name='resnet_identity2b')
-            self.resnet_identity2c = ResNetIdentityBlockSmall(
-                filter_size=64, kernel_size=1, train_bn=True, name='resnet_identity2b')
-            # Stage 3
-            self.resnet_conv3a = ResnetConvBlockSmall(
-                filter_size=128, kernel_size=3, train_bn=True, name='resnet_conv3a')
-            self.resnet_identity3b = ResNetIdentityBlockSmall(
-                filter_size=128, kernel_size=1, train_bn=True, name='resnet_identity3b')
-            self.resnet_identity3c = ResNetIdentityBlockSmall(
-                filter_size=128, kernel_size=1, train_bn=True, name='resnet_identity3c')
-            self.resnet_identity3d = ResNetIdentityBlockSmall(
-                filter_size=128, kernel_size=1, train_bn=True, name='resnet_identity3d')
-            # Stage 4
-            self.resnet_conv4a = ResnetConvBlockSmall(
-                filter_size=256, kernel_size=3, train_bn=True, name='resnet_conv4a')
-            self.resnet_identity4_list = []
-            for i in range(self.stage4_identity_count[self.resnet_type]):
-                self.resnet_identity4_list.append(
-                    ResNetIdentityBlockSmall(filter_size=256, kernel_size=1, train_bn=True))
-            # Stage 5
-            if self.stage5:
-                self.resnet_conv5a = ResnetConvBlockSmall(
-                    filter_size=512, kernel_size=3, train_bn=True, name='resnet_conv5a')
-                self.resnet_identity5b = ResNetIdentityBlockSmall(
-                    filter_size=512, kernel_size=1, train_bn=True, name='resnet_identity5b')
-                self.resnet_identity5c = ResNetIdentityBlockSmall(
-                    filter_size=512, kernel_size=1, train_bn=True, name='resnet_identity5c')
-
-        elif self.resnet_type == 'resnet18':
-            # Stage 2
-            self.resnet_conv2a = ResnetConvBlockSmall(
-                filter_size=64, kernel_size=3, strides=(1, 1), train_bn=True, name='resnet_conv2a')
-            self.resnet_identity2b = ResNetIdentityBlockSmall(
-                filter_size=64, kernel_size=1, train_bn=True, name='resnet_identity2b')
-            # Stage 3
-            self.resnet_conv3a = ResnetConvBlockSmall(
-                filter_size=128, kernel_size=3, train_bn=True, name='resnet_conv3a')
-            self.resnet_identity3b = ResNetIdentityBlockSmall(
-                filter_size=128, kernel_size=1, train_bn=True, name='resnet_identity3b')
-
-            # Stage 4
-            self.resnet_conv4a = ResnetConvBlockSmall(filter_size=256, kernel_size=3, train_bn=True,
-                                                      name='resnet_conv4a')
-            self.resnet_identity4b = ResNetIdentityBlockSmall(filter_size=256, kernel_size=1, train_bn=True,
-                                                              name='resnet_identity4b')
-            # Stage 5
-            if self.stage5:
-                self.resnet_conv5a = ResnetConvBlockSmall(
-                    filter_size=512, kernel_size=3, train_bn=True, name='resnet_conv5a')
-                self.resnet_identity5b = ResNetIdentityBlockSmall(
-                    filter_size=512, kernel_size=1, train_bn=True, name='resnet_identity5b')
-
-    def build(self, input_shape):
-        self.built = True
-        super(ResNetLayer, self).build(input_shape)
-
-    def call(self, inputs, **kwargs):
-
-        # outputs comments here are for paper resize 224x224
-        features_dict = {}
-        # Stage 1
-        x = self.zero_pad(inputs)
-        x = self.conv1(x)
-        x = self.bn_conv1(x)
-        x = self.relu(x)
-        x = self.maxpool1(x)  # output: (n, 56, 56, 64)
-        features_dict.update({'C1': x})
-
-        if self.resnet_type in ['resnet50', 'resnet101']:
-            # Stage 2
-            x = self.resnet_conv2a(x)
-            x = self.resnet_identity2b(x)
-            x = self.resnet_identity2c(x)  # output: (n, 56, 56, 256)
-            features_dict.update({'C2': x})
-
-            # Stage 3
-            x = self.resnet_conv3a(x)
-            x = self.resnet_identity3b(x)
-            x = self.resnet_identity3c(x)
-            x = self.resnet_identity3d(x)  # output: (n, 28, 28, 512)
-
-            features_dict.update({'C3': x})
-
-            # Stage 4
-            x = self.resnet_conv4a(x)
-            for layer in self.resnet_identity4_list:
-                x = layer(x)
-            # output: (1, 14, 14, 1024)
-            features_dict.update({'C4': x})
-
-            # Stage 5
-            features_dict.update({'C5': None})
-            if self.stage5:
-                x = self.resnet_conv5a(x)
-                x = self.resnet_identity5b(x)
-                x = self.resnet_identity5c(x)  # output: # (n, 7, 7, 2048)
-                features_dict.update({'C5': x})
-
-        elif self.resnet_type == 'resnet34':
-            # Stage 2
-            x = self.resnet_conv2a(x)
-            x = self.resnet_identity2b(x)
-            x = self.resnet_identity2c(x)
-            features_dict.update({'C2': x})  # output: (n, 56, 56, 64)
-
-            # Stage 3
-            x = self.resnet_conv3a(x)
-            x = self.resnet_identity3b(x)
-            x = self.resnet_identity3c(x)
-            x = self.resnet_identity3d(x)
-            features_dict.update({'C3': x})  # output: (n, 28, 28, 128)
-
-            # Stage 4
-            x = self.resnet_conv4a(x)
-            for layer in self.resnet_identity4_list:
-                x = layer(x)
-            features_dict.update({'C4': x})  # output: (n, 14, 14, 256)
-
-            # Stage 5
-            features_dict.update({'C5': None})
-            if self.stage5:
-                x = self.resnet_conv5a(x)
-                x = self.resnet_identity5b(x)
-                x = self.resnet_identity5c(x)
-                features_dict.update({'C5': x})  # output: (n, 7, 7, 512)
-
-        elif self.resnet_type == 'resnet18':
-            # Stage 2
-            x = self.resnet_conv2a(x)
-            x = self.resnet_identity2b(x)
-            features_dict.update({'C2': x})  # output: (n, 56, 56, 64)
-
-            # Stage 3
-            x = self.resnet_conv3a(x)
-            x = self.resnet_identity3b(x)
-            features_dict.update({'C3': x})  # output: (n, 28, 28, 128)
-
-            # Stage 4
-            x = self.resnet_conv4a(x)
-            x = self.resnet_identity4b(x)
-            features_dict.update({'C4': x})  # output: (n, 14, 14, 256)
-
-            # Stage 5
-            features_dict.update({'C5': None})
-            if self.stage5:
-                x = self.resnet_conv5a(x)
-                x = self.resnet_identity5b(x)
-                features_dict.update({'C5': x})  # output: (n, 7, 7, 512)
-
-        return features_dict['C2'], features_dict['C3'], features_dict['C4'], features_dict['C5']
-
-    def get_config(self):
-        config = super(ResNetLayer, self).get_config()
         return config
 
 
@@ -557,12 +122,10 @@ class AnchorsLayer(tfl.Layer):
             self._anchor_cache = {}
         if not tuple(self.image_shape) in self._anchor_cache:
             # Generate Anchors
-            self.anchors = utils.generate_pyramid_anchors(
-                self.config['rpn_anchor_scales'],
-                self.config['rpn_anchor_ratios'],
-                backbone_shapes,
-                self.config['backbone_strides'],
-                self.config['rpn_anchor_stride'])
+            self.anchors = utils.generate_pyramid_anchors(self.config['rpn_anchor_scales'],
+                                                          self.config['rpn_anchor_ratios'], backbone_shapes,
+                                                          self.config['backbone_strides'],
+                                                          self.config['rpn_anchor_stride'])
             # Normalize coordinates
             self._anchor_cache[tuple(self.image_shape)] = self.norm_boxes_layer([self.anchors, self.image_shape[:2]])
         anchors = self._anchor_cache[tuple(self.image_shape)]
@@ -588,19 +151,16 @@ class RPNLayer(tfl.Layer):
         self.anchors_per_location = anchors_per_location
         self.anchor_stride = anchor_stride
 
-        self.conv_shared = tfl.Conv2D(512, (3, 3), padding='same', activation=None,
-                                      strides=anchor_stride, name='rpn_conv_shared',
-                                      )
+        self.conv_shared = tfl.Conv2D(512, (3, 3), padding='same', activation=None, strides=anchor_stride,
+                                      name='rpn_conv_shared', )
 
         self.relu = tfl.Activation('relu')
-        self.rpn_class_raw = tfl.Conv2D(2 * anchors_per_location, (1, 1), padding='valid',
-                                        activation='linear', name='rpn_class_raw',
-                                        )
+        self.rpn_class_raw = tfl.Conv2D(2 * anchors_per_location, (1, 1), padding='valid', activation='linear',
+                                        name='rpn_class_raw', )
         self.rpn_class_xxx = tfl.Activation("softmax", name="rpn_class_xxx")
 
-        self.rpn_bbox_pred = tfl.Conv2D(anchors_per_location * 4, (1, 1), padding="valid",
-                                        activation='linear', name='rpn_bbox_pred',
-                                        )
+        self.rpn_bbox_pred = tfl.Conv2D(anchors_per_location * 4, (1, 1), padding="valid", activation='linear',
+                                        name='rpn_bbox_pred', )
 
         self.reshape_logits = tfl.Reshape((-1, 2),
                                           name='reshape_logits')  # tfl.Lambda(lambda x: tf.reshape(x, (-1, 2)), name='reshape_logits')
@@ -635,9 +195,7 @@ class RPNLayer(tfl.Layer):
 
     def get_config(self):
         config = super(RPNLayer, self).get_config()
-        config.update({"anchors_per_location": self.anchors_per_location,
-                       "anchor_stride": self.anchor_stride
-                       })
+        config.update({"anchors_per_location": self.anchors_per_location, "anchor_stride": self.anchor_stride})
         return config
 
 
@@ -664,9 +222,8 @@ class ProposalLayer(tfl.Layer):
         self.nms_threshold = self.config['rpn_nms_threshold']
 
     def nms(self, boxes, scores):
-        indices = tf.image.non_max_suppression(
-            boxes, scores, self.proposal_count,
-            self.nms_threshold, name="rpn_non_max_suppression")
+        indices = tf.image.non_max_suppression(boxes, scores, self.proposal_count, self.nms_threshold,
+                                               name="rpn_non_max_suppression")
         proposals = tf.gather(boxes, indices)
         # Pad if needed
         padding = tf.maximum(self.proposal_count - tf.shape(proposals)[0], 0)
@@ -686,29 +243,21 @@ class ProposalLayer(tfl.Layer):
         # and doing the rest on the smaller subset.
 
         pre_nms_limit = tf.minimum(self.config['pre_nms_limit'], tf.shape(anchors)[1])
-        ix = tf.nn.top_k(scores, pre_nms_limit, sorted=True,
-                         name="top_anchors").indices
-        scores = utils.batch_slice([scores, ix], lambda x, y: tf.gather(x, y),
-                                   self.config['images_per_gpu'])
-        deltas = utils.batch_slice([deltas, ix], lambda x, y: tf.gather(x, y),
-                                   self.config['images_per_gpu'])
-        pre_nms_anchors = utils.batch_slice([anchors, ix], lambda a, x: tf.gather(a, x),
-                                            self.config['images_per_gpu'],
+        ix = tf.nn.top_k(scores, pre_nms_limit, sorted=True, name="top_anchors").indices
+        scores = utils.batch_slice([scores, ix], lambda x, y: tf.gather(x, y), self.config['images_per_gpu'])
+        deltas = utils.batch_slice([deltas, ix], lambda x, y: tf.gather(x, y), self.config['images_per_gpu'])
+        pre_nms_anchors = utils.batch_slice([anchors, ix], lambda a, x: tf.gather(a, x), self.config['images_per_gpu'],
                                             names=["pre_nms_anchors"])
 
         # Apply deltas to anchors to get refined anchors.
         # [batch, N, (y1, x1, y2, x2)]
-        boxes = utils.batch_slice([pre_nms_anchors, deltas],
-                                  lambda x, y: utils.apply_box_deltas_graph(x, y),
-                                  self.config['images_per_gpu'],
-                                  names=["refined_anchors"])
+        boxes = utils.batch_slice([pre_nms_anchors, deltas], lambda x, y: utils.apply_box_deltas_graph(x, y),
+                                  self.config['images_per_gpu'], names=["refined_anchors"])
 
         # Clip to image boundaries. Since we're in normalized coordinates,
         # clip to 0..1 range. [batch, N, (y1, x1, y2, x2)]
         window = np.array([0, 0, 1, 1], dtype=np.float32)
-        boxes = utils.batch_slice(boxes,
-                                  lambda x: utils.clip_boxes_graph(x, window),
-                                  self.config['images_per_gpu'],
+        boxes = utils.batch_slice(boxes, lambda x: utils.clip_boxes_graph(x, window), self.config['images_per_gpu'],
                                   names=["refined_anchors_clipped"])
 
         # Filter out small boxes
@@ -769,21 +318,19 @@ class DetectionTargetLayer(tfl.Layer):
 
         # Slice the batch and run a graph for each slice
         names = ["rois", "target_class_ids", "target_bbox_deltas", "target_mask"]
-        outputs = utils.batch_slice(
-            [proposals, gt_class_ids, gt_boxes, gt_masks],
-            lambda w, x, y, z: detection_targets_graph(
-                w, x, y, z, self.config),
-            self.config['images_per_gpu'], names=names)
+        outputs = utils.batch_slice([proposals, gt_class_ids, gt_boxes, gt_masks],
+                                    lambda w, x, y, z: detection_targets_graph(w, x, y, z, self.config),
+                                    self.config['images_per_gpu'],
+                                    names=names)
         return outputs
 
     def compute_output_shape(self, input_shape):
-        return [
-            (None, self.config['train_rois_per_image'], 4),  # rois
-            (None, self.config['train_rois_per_image']),  # class_ids
-            (None, self.config['train_rois_per_image'], 4),  # deltas
-            (None, self.config['train_rois_per_image'], self.config['mask_shape'][0], self.config['mask_shape'][1])
-            # masks
-        ]
+        return [(None, self.config['train_rois_per_image'], 4),  # rois
+                (None, self.config['train_rois_per_image']),  # class_ids
+                (None, self.config['train_rois_per_image'], 4),  # deltas
+                (None, self.config['train_rois_per_image'], self.config['mask_shape'][0], self.config['mask_shape'][1])
+                # masks
+                ]
 
     def compute_mask(self, inputs, mask=None):
         return [None, None, None, None]
@@ -840,15 +387,13 @@ class DetectionLayer(tfl.Layer):
         # indices = tf.stack([tf.range(self.proposals), class_ids], axis=1)
         proposals_range = tf.range(self.proposals)
         indices = tf.concat([tf.reshape(proposals_range, (tf.shape(proposals_range)[0], 1)),
-                             tf.reshape(class_ids, (tf.shape(class_ids)[0], 1))],
-                            axis=1)
+                             tf.reshape(class_ids, (tf.shape(class_ids)[0], 1))], axis=1)
         class_scores = tf.gather_nd(probs, indices)
         # Class-specific bounding box deltas
         deltas_specific = tf.gather_nd(deltas, indices)
         # Apply bounding box deltas
         # Shape: [boxes, (y1, x1, y2, x2)] in normalized coordinates
-        refined_rois = utils.apply_box_deltas_graph(
-            rois, tf.math.multiply(deltas_specific, self.bbox_std_dev))
+        refined_rois = utils.apply_box_deltas_graph(rois, tf.math.multiply(deltas_specific, self.bbox_std_dev))
         # Clip boxes to image window
         refined_rois = utils.clip_boxes_graph(refined_rois, window)
 
@@ -880,17 +425,14 @@ class DetectionLayer(tfl.Layer):
             # Indices of ROIs of the given class
             ixs = tf.where(tf.equal(pre_nms_class_ids, class_id))[:, 0]
             # Apply NMS
-            class_keep = tf.image.non_max_suppression(
-                tf.gather(pre_nms_rois, ixs),
-                tf.gather(pre_nms_scores, ixs),
-                max_output_size=self.detection_max_instances,
-                iou_threshold=self.detection_nms_threshold)
+            class_keep = tf.image.non_max_suppression(tf.gather(pre_nms_rois, ixs), tf.gather(pre_nms_scores, ixs),
+                                                      max_output_size=self.detection_max_instances,
+                                                      iou_threshold=self.detection_nms_threshold)
             # Map indices
             class_keep = tf.gather(keep, tf.gather(ixs, class_keep))
             # Pad with -1 so returned tensors have the same shape
             gap = self.detection_max_instances - tf.shape(class_keep)[0]
-            class_keep = tf.pad(class_keep, [(0, gap)],
-                                mode='CONSTANT', constant_values=-1)
+            class_keep = tf.pad(class_keep, [(0, gap)], mode='CONSTANT', constant_values=-1)
             # Set shape so map_fn() can infer result shape
             # class_keep.set_shape([self.detection_max_instances])
             return class_keep
@@ -910,17 +452,15 @@ class DetectionLayer(tfl.Layer):
             bool_mask = tf.reduce_sum(broadcast_equal_int, axis=0)
 
             # Apply NMS
-            class_keep = tf.image.non_max_suppression(tf.boolean_mask(
-                pre_nms_rois, bool_mask, axis=None),
-                tf.boolean_mask(pre_nms_scores, bool_mask, axis=None),
-                max_output_size=self.detection_max_instances,
-                iou_threshold=self.detection_nms_threshold)
+            class_keep = tf.image.non_max_suppression(tf.boolean_mask(pre_nms_rois, bool_mask, axis=None),
+                                                      tf.boolean_mask(pre_nms_scores, bool_mask, axis=None),
+                                                      max_output_size=self.detection_max_instances,
+                                                      iou_threshold=self.detection_nms_threshold)
             # Map indicies
             class_keep = tf.gather(keep, class_keep)
             # Pad with -1 so returned tensors have the same shape
             gap = self.detection_max_instances - tf.shape(class_keep)[0]
-            class_keep = tf.pad(class_keep, [(0, gap)],
-                                mode='CONSTANT', constant_values=-1)
+            class_keep = tf.pad(class_keep, [(0, gap)], mode='CONSTANT', constant_values=-1)
             return class_keep
 
         # 2. Map over class IDs
@@ -951,11 +491,9 @@ class DetectionLayer(tfl.Layer):
 
         # Arrange output as [N, (y1, x1, y2, x2, class_id, score)]
         # Coordinates are normalized.
-        detections = tf.concat([
-            tf.gather(refined_rois, keep),
-            tf.cast(tf.gather(class_ids, keep), dtype='float32')[..., tf.newaxis],
-            tf.gather(class_scores, keep)[..., tf.newaxis]
-        ], axis=1)
+        detections = tf.concat(
+            [tf.gather(refined_rois, keep), tf.cast(tf.gather(class_ids, keep), dtype='float32')[..., tf.newaxis],
+             tf.gather(class_scores, keep)[..., tf.newaxis]], axis=1)
 
         # Pad with zeros if detections < DETECTION_MAX_INSTANCES
         gap = self.detection_max_instances - tf.shape(detections)[0]
@@ -977,17 +515,13 @@ class DetectionLayer(tfl.Layer):
         window = self.norm_boxes_layer([m['window'], image_shape[:2]])
 
         # Run detection refinement graph on each item in the batch
-        detections_batch = utils.batch_slice(
-            [rois, mrcnn_class, mrcnn_bbox, window],
-            lambda x, y, w, z: self.refine_detections(x, y, w, z),
-            self.images_per_gpu)
+        detections_batch = utils.batch_slice([rois, mrcnn_class, mrcnn_bbox, window],
+                                             lambda x, y, w, z: self.refine_detections(x, y, w, z), self.images_per_gpu)
 
         # Reshape output
         # [batch, num_detections, (y1, x1, y2, x2, class_id, class_score)] in
         # normalized coordinates
-        return tf.reshape(
-            detections_batch,
-            [self.batch_size, self.detection_max_instances, 6])
+        return tf.reshape(detections_batch, [self.batch_size, self.detection_max_instances, 6])
 
     def compute_output_shape(self, input_shape):
         return None, self.detection_max_instances, 6
@@ -1069,8 +603,7 @@ class PyramidROIAlign(tfl.Layer):
         # e.g. a 224x224 ROI (in pixels) maps to P4
         image_area = tf.cast(image_shape[0] * image_shape[1], tf.float32)
         roi_level = utils.log2_graph(tf.sqrt(h * w) / (self.denominator / tf.sqrt(image_area)))
-        roi_level = tf.minimum(5, tf.maximum(
-            2, 4 + tf.cast(tf.round(roi_level), tf.int32)))
+        roi_level = tf.minimum(5, tf.maximum(2, 4 + tf.cast(tf.round(roi_level), tf.int32)))
         roi_level = tf.squeeze(roi_level, 2)
 
         # Loop through levels and apply ROI pooling to each. P2 to P5.
@@ -1104,9 +637,8 @@ class PyramidROIAlign(tfl.Layer):
             # Here we use the simplified approach of a single value per bin,
             # which is how it's done in tf.crop_and_resize()
             # Result: [batch * num_boxes, pool_height, pool_width, channels]
-            pooled.append(tf.image.crop_and_resize(
-                feature_maps[i], level_boxes, box_indices, self.pool_shape,
-                method="bilinear"))
+            pooled.append(
+                tf.image.crop_and_resize(feature_maps[i], level_boxes, box_indices, self.pool_shape, method="bilinear"))
 
         # Pack pooled features into one tensor
         pooled = tf.concat(pooled, axis=0)[:tf.shape(boxes)[0] * tf.shape(boxes)[1]]
@@ -1116,15 +648,13 @@ class PyramidROIAlign(tfl.Layer):
         box_to_level = tf.concat(box_to_level, axis=0)[:tf.shape(boxes)[0] * tf.shape(boxes)[1]]
 
         box_range = tf.expand_dims(tf.range(tf.shape(box_to_level)[0]), 1)
-        box_to_level = tf.concat([tf.cast(box_to_level, tf.int32), box_range],
-                                 axis=1)
+        box_to_level = tf.concat([tf.cast(box_to_level, tf.int32), box_range], axis=1)
 
         # Rearrange pooled features to match the order of the original boxes
         # Sort box_to_level by batch then box index
         # TF doesn't have a way to sort by two columns, so merge them and sort.
         sorting_tensor = box_to_level[:, 0] * 100000 + box_to_level[:, 1]
-        ix = tf.nn.top_k(sorting_tensor, k=tf.shape(
-            box_to_level)[0]).indices[::-1]
+        ix = tf.nn.top_k(sorting_tensor, k=tf.shape(box_to_level)[0]).indices[::-1]
         ix = tf.gather(box_to_level[:, 2], ix)
         pooled = tf.gather(pooled, ix)
 
@@ -1197,10 +727,8 @@ class FPNClassifier(tfl.Layer):
 
         x = self.mrcnn_bbox_fc(shared)
         # Reshape to [batch, num_rois, NUM_CLASSES, (dy, dx, log(dh), log(dw))]
-        mrcnn_bbox = tf.reshape(
-            tensor=x,
-            shape=(tf.shape(x)[0], tf.shape(x)[1], self.num_classes, 4),
-            name="mrcnn_bbox")
+        mrcnn_bbox = tf.reshape(tensor=x, shape=(tf.shape(x)[0], tf.shape(x)[1], self.num_classes, 4),
+                                name="mrcnn_bbox")
 
         return mrcnn_class_logits, mrcnn_probs, mrcnn_bbox
 
@@ -1307,13 +835,8 @@ class ImageMetaLayer(tfl.Layer):
         window = inputs[:, 7:11]  # (y1, x1, y2, x2) window of image in in pixels
         scale = inputs[:, 11]
         active_class_ids = inputs[:, 12:]
-        total_dict = {"image_id": image_id,
-                      "original_image_shape": original_image_shape,
-                      "image_shape": image_shape,
-                      "window": window,
-                      "scale": scale,
-                      "active_class_ids": active_class_ids,
-                      }
+        total_dict = {"image_id": image_id, "original_image_shape": original_image_shape, "image_shape": image_shape,
+                      "window": window, "scale": scale, "active_class_ids": active_class_ids, }
         return total_dict
 
 
@@ -1340,20 +863,15 @@ def detection_targets_graph(proposals, gt_class_ids, gt_boxes, gt_masks, config)
     Note: Returned arrays might be zero padded if not enough target ROIs.
     """
     # Assertions
-    asserts = [
-        tf.Assert(tf.greater(tf.shape(proposals)[0], 0), [proposals],
-                  name="roi_assertion"),
-    ]
+    asserts = [tf.Assert(tf.greater(tf.shape(proposals)[0], 0), [proposals], name="roi_assertion"), ]
     with tf.control_dependencies(asserts):
         proposals = tf.identity(proposals)
 
     # Remove zero padding
     proposals, _ = trim_zeros_graph(proposals, name="trim_proposals")
     gt_boxes, non_zeros = trim_zeros_graph(gt_boxes, name="trim_gt_boxes")
-    gt_class_ids = tf.boolean_mask(gt_class_ids, non_zeros,
-                                   name="trim_gt_class_ids")
-    gt_masks = tf.gather(gt_masks, tf.where(non_zeros)[:, 0], axis=2,
-                         name="trim_gt_masks")
+    gt_class_ids = tf.boolean_mask(gt_class_ids, non_zeros, name="trim_gt_class_ids")
+    gt_masks = tf.gather(gt_masks, tf.where(non_zeros)[:, 0], axis=2, name="trim_gt_masks")
 
     # Handle COCO crowds
     # A crowd box in COCO is a bounding box around several instances. Exclude
@@ -1383,8 +901,7 @@ def detection_targets_graph(proposals, gt_class_ids, gt_boxes, gt_masks, config)
 
     # Subsample ROIs. Aim for 33% positive
     # Positive ROIs
-    positive_count = int(config['train_rois_per_image'] *
-                         config['roi_positive_ratio'])
+    positive_count = int(config['train_rois_per_image'] * config['roi_positive_ratio'])
     positive_indices = tf.random.shuffle(positive_indices)[:positive_count]
     positive_count = tf.shape(positive_indices)[0]
     # Negative ROIs. Add enough to maintain positive:negative ratio.
@@ -1397,11 +914,9 @@ def detection_targets_graph(proposals, gt_class_ids, gt_boxes, gt_masks, config)
 
     # Assign positive ROIs to GT boxes.
     positive_overlaps = tf.gather(overlaps, positive_indices)
-    roi_gt_box_assignment = tf.cond(
-        tf.greater(tf.shape(positive_overlaps)[1], 0),
-        true_fn=lambda: tf.argmax(positive_overlaps, axis=1),
-        false_fn=lambda: tf.cast(tf.constant([]), tf.int64)
-    )
+    roi_gt_box_assignment = tf.cond(tf.greater(tf.shape(positive_overlaps)[1], 0),
+                                    true_fn=lambda: tf.argmax(positive_overlaps, axis=1),
+                                    false_fn=lambda: tf.cast(tf.constant([]), tf.int64))
     roi_gt_boxes = tf.gather(gt_boxes, roi_gt_box_assignment)
     roi_gt_class_ids = tf.gather(gt_class_ids, roi_gt_box_assignment)
 
@@ -1430,9 +945,7 @@ def detection_targets_graph(proposals, gt_class_ids, gt_boxes, gt_masks, config)
         x2 = (x2 - gt_x1) / gt_w
         boxes = tf.concat([y1, x1, y2, x2], 1)
     box_ids = tf.range(0, tf.shape(roi_masks)[0])
-    masks = tf.image.crop_and_resize(tf.cast(roi_masks, tf.float32), boxes,
-                                     box_ids,
-                                     config['mask_shape'])
+    masks = tf.image.crop_and_resize(tf.cast(roi_masks, tf.float32), boxes, box_ids, config['mask_shape'])
     # Remove the extra dimension from masks.
     masks = tf.squeeze(masks, axis=3)
 
@@ -1474,8 +987,7 @@ def overlaps_graph(boxes1, boxes2):
     # every boxes1 against every boxes2 without loops.
     # TF doesn't have an equivalent to np.repeat() so simulate it
     # using tf.tile() and tf.reshape.
-    b1 = tf.reshape(tf.tile(tf.expand_dims(boxes1, 1),
-                            [1, 1, tf.shape(boxes2)[0]]), [-1, 4])
+    b1 = tf.reshape(tf.tile(tf.expand_dims(boxes1, 1), [1, 1, tf.shape(boxes2)[0]]), [-1, 4])
     b2 = tf.tile(boxes2, [tf.shape(boxes1)[0], 1])
     # 2. Compute intersections
     b1_y1, b1_x1, b1_y2, b1_x2 = tf.split(b1, 4, axis=1)
@@ -1493,220 +1005,6 @@ def overlaps_graph(boxes1, boxes2):
     iou = intersection / union
     overlaps = tf.reshape(iou, [tf.shape(boxes1)[0], tf.shape(boxes2)[0]])
     return overlaps
-
-
-def conv_block(input_tensor, kernel_size, filters, stage, block,
-               strides=(2, 2), use_bias=True, train_bn=True):
-    """
-    conv_block is the block that has a conv layer at shortcut
-    # Arguments
-        input_tensor: input tensor
-        kernel_size: default 3, the kernel size of middle conv layer at main path
-        filters: list of integers, the nb_filters of 3 conv layer at main path
-        stage: integer, current stage label, used for generating layer names
-        block: 'a','b'..., current block label, used for generating layer names
-        use_bias: Boolean. To use or not use a bias in conv layers.
-        train_bn: Boolean. Train or freeze Batch Norm layers
-    Note that from stage 3, the first conv layer at main path is with subsample=(2,2)
-    And the shortcut should have subsample=(2,2) as well
-    """
-
-    nb_filter1, nb_filter2, nb_filter3 = filters
-    conv_name_base = 'bbone_res' + str(stage) + block + '_branch'
-    bn_name_base = 'bbone_bn' + str(stage) + block + '_branch'
-
-    x = tfl.Conv2D(nb_filter1, (1, 1), strides=strides,
-                   name=conv_name_base + '2a', use_bias=use_bias)(input_tensor)
-    x = tfl.BatchNormalization(name=bn_name_base + '2a', trainable=train_bn)(x)
-    x = tfl.Activation('relu', name=f'relu_2a_{block}_{stage}')(x)
-
-    x = tfl.Conv2D(nb_filter2, (kernel_size, kernel_size), padding='same',
-                   name=conv_name_base + '2b', use_bias=use_bias)(x)
-    x = tfl.BatchNormalization(name=bn_name_base + '2b', trainable=train_bn)(x)
-    x = tfl.Activation('relu', name=f'relu_2b_{block}_{stage}')(x)
-
-    x = tfl.Conv2D(nb_filter3, (1, 1), name=conv_name_base +
-                                            '2c', use_bias=use_bias)(x)
-    x = tfl.BatchNormalization(name=bn_name_base + '2c', trainable=train_bn)(x)
-
-    shortcut = tfl.Conv2D(nb_filter3, (1, 1), strides=strides,
-                          name=conv_name_base + '1', use_bias=use_bias)(input_tensor)
-    shortcut = tfl.BatchNormalization(name=bn_name_base + '1', trainable=train_bn)(shortcut)
-
-    x = tfl.Add(name=f'add_{block}_{stage}')([x, shortcut])
-    x = tfl.Activation('relu', name='res' + str(stage) + block + '_out')(x)
-    return x
-
-
-def conv_block_small(input_tensor, filter_size, stage, block, kernel_size=3, strides=(2, 2),
-                     use_bias=True, train_bn=True):
-    conv_name_base = 'bbone_res' + str(stage) + block + '_branch'
-    bn_name_base = 'bbone_bn' + str(stage) + block + '_branch'
-
-    x = tfl.Conv2D(filters=filter_size, kernel_size=kernel_size, strides=strides,
-                   use_bias=use_bias, padding='same', name=conv_name_base + '2a')(input_tensor)
-    x = tfl.BatchNormalization(trainable=train_bn, name=bn_name_base + '2a')(x)
-    x = tfl.Activation('relu', name=f'relu_2a_{block}_{stage}')(x)
-
-    x = tfl.Conv2D(filters=filter_size, kernel_size=kernel_size, use_bias=use_bias,
-                   padding='same', name=conv_name_base + '2b')(x)
-    x = tfl.BatchNormalization(trainable=train_bn, name=bn_name_base + '2b')(x)
-    x = tfl.Activation('relu', name=f'relu_2b_{block}_{stage}')(x)
-
-    shortcut = tfl.Conv2D(filters=filter_size, kernel_size=(1, 1), strides=strides,
-                          use_bias=use_bias, name=conv_name_base + '1')(input_tensor)
-    shortcut = tfl.BatchNormalization(trainable=train_bn, name=bn_name_base + '1')(shortcut)
-
-    x = tfl.Add(name=f'add_{block}_{stage}')([x, shortcut])
-    x = tfl.Activation('relu', name='res' + str(stage) + block + '_out')(x)
-    return x
-
-
-def identity_block_small(input_tensor, filter_size, stage, block, kernel_size,
-                         use_bias=True, train_bn=True):
-    conv_name_base = 'bbone_res' + str(stage) + block + '_branch'
-    bn_name_base = 'bbone_bn' + str(stage) + block + '_branch'
-
-    x = tfl.Conv2D(filters=filter_size, kernel_size=kernel_size, use_bias=use_bias,
-                   name=conv_name_base + '2a')(input_tensor)
-    x = tfl.BatchNormalization(name=bn_name_base + '2a', trainable=train_bn)(x)
-    x = tfl.Activation('relu', name=f'relu_2a_{block}_{stage}')(x)
-
-    x = tfl.Conv2D(filters=filter_size, kernel_size=kernel_size, use_bias=use_bias,
-                   name=conv_name_base + '2b')(x)
-    x = tfl.BatchNormalization(name=bn_name_base + '2b', trainable=train_bn)(x)
-
-    x = tfl.Add(name=f'add_{block}_{stage}')([x, input_tensor])
-    x = tfl.Activation('relu', name='res' + str(stage) + block + '_out')(x)
-
-    return x
-
-
-def identity_block(input_tensor, kernel_size, filters, stage, block,
-                   use_bias=True, train_bn=True):
-    """
-    The identity_block is the block that has no conv layer at shortcut
-    # Arguments
-        input_tensor: input tensor
-        kernel_size: default 3, the kernel size of middle conv layer at main path
-        filters: list of integers, the nb_filters of 3 conv layer at main path
-        stage: integer, current stage label, used for generating layer names
-        block: 'a','b'..., current block label, used for generating layer names
-        use_bias: Boolean. To use or not use a bias in conv layers.
-        train_bn: Boolean. Train or freeze Batch Norm layers
-    """
-    nb_filter1, nb_filter2, nb_filter3 = filters
-    conv_name_base = 'bbone_res' + str(stage) + block + '_branch'
-    bn_name_base = 'bbone_bn' + str(stage) + block + '_branch'
-
-    x = tfl.Conv2D(nb_filter1, (1, 1), name=conv_name_base + '2a',
-                   use_bias=use_bias)(input_tensor)
-    x = tfl.BatchNormalization(name=bn_name_base + '2a', trainable=train_bn)(x)
-    x = tfl.Activation('relu', name=f'relu_2a_{block}_{stage}')(x)
-
-    x = tfl.Conv2D(nb_filter2, (kernel_size, kernel_size), padding='same',
-                   name=conv_name_base + '2b', use_bias=use_bias)(x)
-    x = tfl.BatchNormalization(name=bn_name_base + '2b', trainable=train_bn)(x)
-    x = tfl.Activation('relu', name=f'relu_2b_{block}_{stage}')(x)
-
-    x = tfl.Conv2D(nb_filter3, (1, 1), name=conv_name_base + '2c',
-                   use_bias=use_bias)(x)
-    x = tfl.BatchNormalization(name=bn_name_base + '2c', trainable=train_bn)(x)
-
-    x = tfl.Add(name=f'add_{block}_{stage}')([x, input_tensor])
-    x = tfl.Activation('relu', name='res' + str(stage) + block + '_out')(x)
-    return x
-
-
-def resnet_graph(input_image, architecture, stage5=False, train_bn=True):
-    """Build a ResNet graph.
-        architecture: resnet type
-        stage5: Boolean. If False, stage5 of the network is not created
-        train_bn: Boolean. Train or freeze Batch Norm layers
-    """
-    assert architecture in ["resnet18", "resnet34", "resnet50", "resnet101"]
-    block_count = {"resnet18": 1, "resnet34": 5, "resnet50": 5, "resnet101": 22}[architecture]
-
-    # Stage 1
-    x = tfl.ZeroPadding2D((3, 3))(input_image)
-    x = tfl.Conv2D(64, (7, 7), strides=(2, 2), name='bbone_res_conv1', use_bias=True)(x)
-    x = tfl.BatchNormalization(trainable=train_bn, name='bbone_bn_conv1')(x)
-    x = tfl.Activation('relu')(x)
-    C1 = x = tfl.MaxPooling2D((3, 3), strides=(2, 2), padding="same")(x)
-
-    if int(architecture.replace('resnet', '')) in [50, 101]:
-        # Stage 2
-        x = conv_block(x, 3, [64, 64, 256], stage=2, block='a', strides=(1, 1), train_bn=train_bn)
-        x = identity_block(x, 3, [64, 64, 256], stage=2, block='b', train_bn=train_bn)
-        C2 = x = identity_block(x, 3, [64, 64, 256], stage=2, block='c', train_bn=train_bn)
-        # Stage 3
-        x = conv_block(x, 3, [128, 128, 512], stage=3, block='a', train_bn=train_bn)
-        x = identity_block(x, 3, [128, 128, 512], stage=3, block='b', train_bn=train_bn)
-        x = identity_block(x, 3, [128, 128, 512], stage=3, block='c', train_bn=train_bn)
-        C3 = x = identity_block(x, 3, [128, 128, 512], stage=3, block='d', train_bn=train_bn)
-        # Stage 4
-        x = conv_block(x, 3, [256, 256, 1024], stage=4, block='a', train_bn=train_bn)
-
-        for i in range(block_count):
-            x = identity_block(x, 3, [256, 256, 1024], stage=4, block=chr(98 + i), train_bn=train_bn)
-        C4 = x
-        # Stage 5
-        if stage5:
-            x = conv_block(x, 3, [512, 512, 2048], stage=5, block='a', train_bn=train_bn)
-            x = identity_block(x, 3, [512, 512, 2048], stage=5, block='b', train_bn=train_bn)
-            C5 = x = identity_block(x, 3, [512, 512, 2048], stage=5, block='c', train_bn=train_bn)
-        else:
-            C5 = None
-
-    elif int(architecture.replace('resnet', '')) == 34:
-        # Stage 2
-        x = conv_block_small(x, filter_size=64, stage=2, block='a', kernel_size=3, strides=(1, 1), train_bn=train_bn)
-        x = identity_block_small(x, filter_size=64, stage=2, block='b', kernel_size=1, train_bn=train_bn)
-        C2 = x = identity_block_small(x, filter_size=64, stage=2, block='c', kernel_size=1, train_bn=train_bn)
-
-        # Stage 3
-        x = conv_block_small(x, filter_size=128, stage=3, block='a', kernel_size=3, train_bn=train_bn)
-        x = identity_block_small(x, filter_size=128, stage=3, block='b', kernel_size=1, train_bn=train_bn)
-        x = identity_block_small(x, filter_size=128, stage=3, block='c', kernel_size=1, train_bn=train_bn)
-        C3 = x = identity_block_small(x, filter_size=128, stage=3, block='d', kernel_size=1, train_bn=train_bn)
-
-        # Stage 4
-        x = conv_block_small(x, filter_size=256, stage=4, block='a', kernel_size=3, train_bn=train_bn)
-        for i in range(block_count):
-            x = identity_block_small(x, filter_size=256, stage=4, block=chr(98 + i), kernel_size=1, train_bn=train_bn)
-        C4 = x
-
-        # Stage 5
-        if stage5:
-            x = conv_block_small(x, filter_size=512, stage=5, block='a', kernel_size=3, train_bn=train_bn)
-            x = identity_block_small(x, filter_size=512, stage=5, block='b', kernel_size=1, train_bn=train_bn)
-            C5 = x = identity_block_small(x, filter_size=512, stage=5, block='c', kernel_size=1, train_bn=train_bn)
-        else:
-            C5 = None
-
-    elif int(architecture.replace('resnet', '')) == 18:
-        # Stage 2
-        x = conv_block_small(x, filter_size=64, stage=2, block='a', kernel_size=3, strides=(1, 1), train_bn=train_bn)
-        C2 = x = identity_block_small(x, filter_size=64, stage=2, block='b', kernel_size=1, train_bn=train_bn)
-
-        # Stage 3
-        x = conv_block_small(x, filter_size=128, stage=3, block='a', kernel_size=3, train_bn=train_bn)
-        C3 = x = identity_block_small(x, filter_size=128, stage=3, block='b', kernel_size=1, train_bn=train_bn)
-
-        # Stage 4
-        x = conv_block_small(x, filter_size=256, stage=4, block='a', kernel_size=3, train_bn=train_bn)
-        for i in range(block_count):
-            x = identity_block_small(x, filter_size=256, stage=4, block=chr(98 + i), kernel_size=1, train_bn=train_bn)
-        C4 = x
-
-        # Stage 5
-        if stage5:
-            x = conv_block_small(x, filter_size=512, stage=5, block='a', kernel_size=3, train_bn=train_bn)
-            C5 = x = identity_block_small(x, filter_size=512, stage=5, block='b', kernel_size=1, train_bn=train_bn)
-        else:
-            C5 = None
-
-    return [C1, C2, C3, C4, C5]
 
 
 def upsampling_graph(inputs, config):
@@ -1767,8 +1065,8 @@ def rpn_graph(inputs, anchors_per_location, anchor_stride, training):
                         name='rpn_conv_shared')(inputs)
 
     # Anchor Score. [batch, height, width, anchors per location * 2].
-    rpn_class_x = tfl.Conv2D(2 * anchors_per_location, (1, 1), padding='valid', use_bias=False,
-                             name='rpn_class_raw')(shared)
+    rpn_class_x = tfl.Conv2D(2 * anchors_per_location, (1, 1), padding='valid', use_bias=False, name='rpn_class_raw')(
+        shared)
     rpn_class_x = tfl.Activation('linear')(rpn_class_x)
 
     # Reshape to [batch, anchors, 2]
@@ -1782,8 +1080,8 @@ def rpn_graph(inputs, anchors_per_location, anchor_stride, training):
 
     # Bounding box refinement. [batch, H, W, anchors per location * depth]
     # where depth is [x, y, log(w), log(h)]
-    rpn_bbox_x = tfl.Conv2D(anchors_per_location * 4, (1, 1), padding="valid", use_bias=False,
-                            name='rpn_bbox_pred')(shared)
+    rpn_bbox_x = tfl.Conv2D(anchors_per_location * 4, (1, 1), padding="valid", use_bias=False, name='rpn_bbox_pred')(
+        shared)
     rpn_bbox_x = tfl.Activation('linear')(rpn_bbox_x)
 
     # Reshape to [batch, anchors, 4]
@@ -1823,8 +1121,8 @@ def build_rpn_model(anchor_stride, anchors_per_location, depth, training, frozen
     return rpn_model
 
 
-def fpn_classifier_graph(inputs, pool_size, fc_layers_size, num_classes, train_bn,
-                         batch_size, post_nms_rois_inference, training, frozen, leaky_relu):
+def fpn_classifier_graph(inputs, pool_size, fc_layers_size, num_classes, train_bn, batch_size, post_nms_rois_inference,
+                         training, frozen, leaky_relu):
     """
 
     Args:
@@ -1850,29 +1148,25 @@ def fpn_classifier_graph(inputs, pool_size, fc_layers_size, num_classes, train_b
     if frozen:
         print('[MaskRCNN] Cls head is frozen')
 
-    tdistr_conv1 = tfl.TimeDistributed(tfl.Conv2D(fc_layers_size,
-                                                  (pool_size, pool_size),
-                                                  padding="valid",
-                                                  trainable=trainable),
-                                       name="mrcnn_class_conv1")
+    tdistr_conv1 = tfl.TimeDistributed(
+        tfl.Conv2D(fc_layers_size, (pool_size, pool_size), padding="valid", trainable=trainable),
+        name="mrcnn_class_conv1")
     tdistr_bn1 = tfl.TimeDistributed(tfl.BatchNormalization(trainable=train_bn), name='mrcnn_class_bn1')
 
-    tdistr_conv2 = tfl.TimeDistributed(tfl.Conv2D(fc_layers_size,
-                                                  (1, 1),
-                                                  trainable=trainable), name="mrcnn_class_conv2")
+    tdistr_conv2 = tfl.TimeDistributed(tfl.Conv2D(fc_layers_size, (1, 1), trainable=trainable),
+                                       name="mrcnn_class_conv2")
 
     tdistr_bn2 = tfl.TimeDistributed(tfl.BatchNormalization(trainable=train_bn), name='mrcnn_class_bn2')
 
     # Classifier head
-    mrcnn_class_logits_layer = tfl.TimeDistributed(tfl.Dense(num_classes,
-                                                             trainable=trainable), name='fpnclf_mrcnn_class_logits')
+    mrcnn_class_logits_layer = tfl.TimeDistributed(tfl.Dense(num_classes, trainable=trainable),
+                                                   name='fpnclf_mrcnn_class_logits')
     mrcnn_probs_layer = tfl.TimeDistributed(tfl.Activation("softmax"), name="fpnclf_mrcnn_class")
 
     # BBox head
     # [batch, num_rois, NUM_CLASSES * (dy, dx, log(dh), log(dw))]
-    mrcnn_bbox_fc = tfl.TimeDistributed(tfl.Dense(num_classes * 4,
-                                                  activation='linear',
-                                                  trainable=trainable), name='fpnclf_mrcnn_bbox_fc')
+    mrcnn_bbox_fc = tfl.TimeDistributed(tfl.Dense(num_classes * 4, activation='linear', trainable=trainable),
+                                        name='fpnclf_mrcnn_bbox_fc')
 
     rois, image_meta, feature_maps = inputs
     x = roi_align([rois, image_meta] + feature_maps)
@@ -1884,13 +1178,10 @@ def fpn_classifier_graph(inputs, pool_size, fc_layers_size, num_classes, train_b
 
     # Fix for several backbones
     if training:
-        shared = tfl.Lambda(lambda x: tf.squeeze(tf.squeeze(x, 3), 2),
-                            name="fpnclf_pool_squeeze")(x)  # -> [None, None, 1024]
-        # shared = tfl.Lambda(lambda x: tf.reshape(x, (batch_size, post_nms_rois_inference, 1024)),
-        #                     name="fpnclf_pool_squeeze")(x)
+        shared = tfl.Lambda(lambda x: tf.squeeze(tf.squeeze(x, 3), 2), name="fpnclf_pool_squeeze")(
+            x)  # -> [None, None, 1024]  # shared = tfl.Lambda(lambda x: tf.reshape(x, (batch_size, post_nms_rois_inference, 1024)),  #                     name="fpnclf_pool_squeeze")(x)
     else:
-        shared = tfl.Reshape(target_shape=(post_nms_rois_inference, 1024),
-                             name="fpnclf_pool_squeeze")(x)
+        shared = tfl.Reshape(target_shape=(post_nms_rois_inference, 1024), name="fpnclf_pool_squeeze")(x)
 
     mrcnn_class_logits = mrcnn_class_logits_layer(shared)
     mrcnn_probs = mrcnn_probs_layer(mrcnn_class_logits)
@@ -1947,12 +1238,12 @@ def fpn_mask_graph(inputs, pool_size, num_classes, train_bn, frozen, leaky_relu)
     tdistr_bn4 = tfl.TimeDistributed(fpnmask_bn4, name='mrcnn_mask_bn4')
 
     fpnmask_deconv_act = tf.keras.layers.LeakyReLU() if leaky_relu else 'relu'
-    fpnmask_deconv = tfl.Conv2DTranspose(256, (2, 2), strides=2, activation=fpnmask_deconv_act,
-                                         trainable=trainable, name='fpnmask_convt')
+    fpnmask_deconv = tfl.Conv2DTranspose(256, (2, 2), strides=2, activation=fpnmask_deconv_act, trainable=trainable,
+                                         name='fpnmask_convt')
     tdistr_deconv = tfl.TimeDistributed(fpnmask_deconv, name="mrcnn_mask_deconv")
 
-    fpn_conv_ = tfl.Conv2D(num_classes, (1, 1), strides=1, activation="sigmoid",
-                           trainable=trainable, name='fpnmask_conv_')
+    fpn_conv_ = tfl.Conv2D(num_classes, (1, 1), strides=1, activation="sigmoid", trainable=trainable,
+                           name='fpnmask_conv_')
     tdistr_mrcnn_mask = tfl.TimeDistributed(fpn_conv_, name="mrcnn_mask")
 
     rois, image_meta, feature_maps = inputs
@@ -1999,14 +1290,11 @@ class MaskRCNNBackbone:
         self.config = config
         self.preprocess_input = None
         self.backbone = None
-        self._backbone_list = ['resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152',
-                               'mobilenet', 'mobilenetv2',
-                               'efficientnetb0', 'efficientnetb1', 'efficientnetb2', 'efficientnetb3',
-                               'efficientnetb4', 'efficientnetb5', 'efficientnetb6', 'efficientnetb7',
-                               'seresnet18', 'seresnet34', 'seresnet50', 'seresnet101', 'seresnet152',
-                               'seresnext50', 'seresnext101', 'senet154',
-                               'resnext50', 'resnext101'
-                               ]
+        self._backbone_list = ['resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152', 'mobilenet', 'mobilenetv2',
+                               'efficientnetb0', 'efficientnetb1', 'efficientnetb2', 'efficientnetb3', 'efficientnetb4',
+                               'efficientnetb5', 'efficientnetb6', 'efficientnetb7', 'seresnet18', 'seresnet34',
+                               'seresnet50', 'seresnet101', 'seresnet152', 'seresnext50', 'seresnext101', 'senet154',
+                               'resnext50', 'resnext101']
 
         self.backbone_outputs = {
             'resnet18': ['pooling0', 'stage2_unit1_relu1', 'stage3_unit1_relu1', 'stage4_unit1_relu1', 'relu1'],
@@ -2015,10 +1303,9 @@ class MaskRCNNBackbone:
             'resnet101': ['pooling0', 'stage2_unit1_relu1', 'stage3_unit1_relu1', 'stage4_unit1_relu1', 'relu1'],
             'resnet152': ['pooling0', 'stage2_unit1_relu1', 'stage3_unit1_relu1', 'stage4_unit1_relu1', 'relu1'],
 
-            'mobilenet': ['conv_pw_1_relu', 'conv_pw_3_relu', 'conv_pw_5_relu',
-                          'conv_pw_10_relu', 'conv_pw_13_relu'],
-            'mobilenetv2': ['block_1_expand_relu', 'block_3_expand_relu', 'block_6_expand_relu',
-                            'block_13_expand_relu', 'out_relu'],
+            'mobilenet': ['conv_pw_1_relu', 'conv_pw_3_relu', 'conv_pw_5_relu', 'conv_pw_10_relu', 'conv_pw_13_relu'],
+            'mobilenetv2': ['block_1_expand_relu', 'block_3_expand_relu', 'block_6_expand_relu', 'block_13_expand_relu',
+                            'out_relu'],
 
             'seresnet18': ['pooling0', 'stage2_unit1_relu1', 'stage3_unit1_relu1', 'stage4_unit1_relu1', 'relu1'],
             'seresnet34': ['pooling0', 'stage2_unit1_relu1', 'stage3_unit1_relu1', 'stage4_unit1_relu1', 'relu1'],
@@ -2031,60 +1318,50 @@ class MaskRCNNBackbone:
             'seresnext101': ['max_pooling2d', 'activation_16', 'activation_36', 'activation_151', 'activation_165'],
             'senet154': ['max_pooling2d', 'activation_13', 'activation_54', 'activation_238', 'activation_252'],
 
-            'resnext50': ['pooling0', 'stage2_unit1_relu1', 'stage3_unit1_relu1',
-                          'stage4_unit1_relu1', 'stage4_unit3_relu'],
-            'resnext101': ['pooling0', 'stage2_unit1_relu1', 'stage3_unit1_relu1',
-                           'stage4_unit1_relu1', 'stage4_unit3_relu']
+            'resnext50': ['pooling0', 'stage2_unit1_relu1', 'stage3_unit1_relu1', 'stage4_unit1_relu1',
+                          'stage4_unit3_relu'],
+            'resnext101': ['pooling0', 'stage2_unit1_relu1', 'stage3_unit1_relu1', 'stage4_unit1_relu1',
+                           'stage4_unit3_relu']
 
         }
 
-        self.backbone_outputs.update(
-            {f'efficientnetb{i}': ['block2a_activation', 'block3a_expand_activation',
-                                   'block4a_expand_activation', 'block6a_expand_activation',
-                                   'top_activation'] for i in range(8)}
-        )
+        self.backbone_outputs.update({
+            f'efficientnetb{i}': ['block2a_activation', 'block3a_expand_activation', 'block4a_expand_activation',
+                                  'block6a_expand_activation', 'top_activation'] for i in range(8)})
 
         if self.backbone_name not in self._backbone_list:
             raise NotImplementedError(f'Only {self._backbone_list} backbones. The chosen: {self.backbone_name}')
 
+    def _match_by_pattern(self, patterns: list) -> bool:
+        match = False
+        for p in patterns:
+            if re.match(p, self.backbone_name):
+                match = True
+        return match
+
     def _get_notop_model(self):
 
-        _effnet_mapping = {'efficientnetb0': efn.EfficientNetB0,
-                           'efficientnetb1': efn.EfficientNetB1,
-                           'efficientnetb2': efn.EfficientNetB2,
-                           'efficientnetb3': efn.EfficientNetB3,
-                           'efficientnetb4': efn.EfficientNetB4,
-                           'efficientnetb5': efn.EfficientNetB5,
-                           'efficientnetb6': efn.EfficientNetB6,
-                           'efficientnetb7': efn.EfficientNetB7,
-                           }
-        if 'efficientnet' in self.backbone_name:
-            # EfficientNets
-            model = _effnet_mapping[self.backbone_name](input_shape=self.input_shape,
-                                                        weights=self.weights,
-                                                        include_top=False)
-        elif 'resnet' in self.backbone_name or \
-                'resnext' in self.backbone_name or \
-                'seresnet' in self.backbone_name or \
-                'seresnext' in self.backbone_name or \
-                'senet' in self.backbone_name:
+        _effnet_mapping = {'efficientnetb0': efn.EfficientNetB0, 'efficientnetb1': efn.EfficientNetB1,
+                           'efficientnetb2': efn.EfficientNetB2, 'efficientnetb3': efn.EfficientNetB3,
+                           'efficientnetb4': efn.EfficientNetB4, 'efficientnetb5': efn.EfficientNetB5,
+                           'efficientnetb6': efn.EfficientNetB6, 'efficientnetb7': efn.EfficientNetB7, }
 
+        if self._match_by_pattern(patterns=[r'efficientnetb\d+']):
+            # EfficientNets
+            model = _effnet_mapping[self.backbone_name](input_shape=self.input_shape, weights=self.weights,
+                                                        include_top=False)
+        elif self._match_by_pattern(
+                patterns=[r'resnet\d+', r'resnext\d+', r'seresnet\d+', r'seresnet\d+', r'seresnext\d+', r'senet\d+']
+        ):
             # ResNets, ResNeXts, SE-ResNets, SE-ResNeXt, SeNet
             model_class, preprocess_input = Classifiers.get(self.backbone_name)
-            model = model_class(input_shape=self.input_shape,
-                                weights=self.weights,
-                                leaky_relu=self.config['resnet_leaky_relu'],
-                                include_top=False
-                                )
+            model = model_class(input_shape=self.input_shape, weights=self.weights,
+                                leaky_relu=self.config['resnet_leaky_relu'], include_top=False)
             self.preprocess_input = preprocess_input
-        elif 'mobilenet' in self.backbone_name:
+        elif self._match_by_pattern(patterns=['mobilenet', 'mobilenetv2']):
             # MobileNets
             model_class, preprocess_input = Classifiers.get(self.backbone_name)
-            model = model_class(input_shape=self.input_shape,
-                                weights=self.weights,
-                                include_top=False
-                                )
-
+            model = model_class(input_shape=self.input_shape, weights=self.weights, include_top=False)
             self.preprocess_input = preprocess_input
         else:
             raise ValueError(f'Unknown backbone: {self.backbone_name}\nAvailable: {self.backbone_name}')
@@ -2094,16 +1371,15 @@ class MaskRCNNBackbone:
     def _choose_backbone(self):
 
         model = self._get_notop_model()
-        # Set trainable=False to all batchnorm layers
-        bn_layers = [x.name for x in model.layers if 'bn' in x.name]
-        for layer_name in bn_layers:
-            model.get_layer(layer_name).trainable = False
+        if not self.config['train_bn_backbone']:
+            bn_layers = [x.name for x in model.layers if 'bn' in x.name]
+            for layer_name in bn_layers:
+                model.get_layer(layer_name).trainable = False
 
-        self.backbone = tf.keras.Model(
-            inputs=model.input,
-            outputs=[model.get_layer(x).output for x in self.backbone_outputs[self.backbone_name]],
-            name=f'backbone_{self.backbone_name}'
-        )
+        self.backbone = tf.keras.Model(inputs=model.input,
+                                       outputs=[model.get_layer(x).output for x in
+                                                self.backbone_outputs[self.backbone_name]],
+                                       name=f'backbone_{self.backbone_name}')
 
         return self.backbone
 
