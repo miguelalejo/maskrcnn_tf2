@@ -1,14 +1,14 @@
 import json
 import os
 import warnings
+from typing import Tuple
 
 import albumentations
-import cv2
 import albumentations as img_album
+import cv2
 import numpy as np
 import scipy
 from common import utils
-from typing import Tuple
 from tensorflow import cast
 from tensorflow.keras.utils import Sequence
 
@@ -45,7 +45,7 @@ class SegmentationDataset:
             annot_file = [x for x in os.listdir(images_dir) if '.json' in x]
             assert len(annot_file) == 1
             annot_file = annot_file[0]
-            print(f'Found annotation file: {annot_file} in dataset path: {images_dir}')
+            print(f'\nFound annotation file: {annot_file} in dataset path: {images_dir}')
 
             if self.json_annotation_key:
                 self.annotation_dict = json.load(open(os.path.join(images_dir, annot_file)))[json_annotation_key]
@@ -60,27 +60,30 @@ class SegmentationDataset:
             self.annotation_dict.clear()
             self.annotation_dict.update(remapped_annotation_dict)
         else:
-            print('None passed to images_dir argument.\n',
-                  'This means that the dataset class is a child of SegmentationDataset and its '
-                  'behaviour differs from datasets created with VGG Image Annotator.\n',
-                  'If it is not true, please, check your class arguments carefully.\n')
+            name = self.__class__.__name__
+            print(
+                '\nNone passed to images_dir argument.' +
+                f'\nThis means that the {name} dataset class is a child of SegmentationDataset and its' +
+                '\nbehaviour differs from datasets created with VGG Image Annotator.' +
+                '\nIf it is not true, please, check your class arguments carefully.'
+            )
 
-        # Get class indexes from class_dict
-        self.classes_dict = self.kwargs['class_dict']
-        self.class_values = list(self.classes_dict.values())
-        self.augmentation = augmentation
-        self.preprocess_transform = preprocess_transform
+            # Get class indexes from class_dict
+            self.classes_dict = self.kwargs['class_dict']
+            self.class_values = list(self.classes_dict.values())
+            self.augmentation = augmentation
+            self.preprocess_transform = preprocess_transform
 
-        self.backbone_shapes = utils.compute_backbone_shapes(self.kwargs)
-        self.anchors = utils.generate_pyramid_anchors(scales=self.kwargs['rpn_anchor_scales'],
-                                                      ratios=self.kwargs['rpn_anchor_ratios'],
-                                                      feature_shapes=self.backbone_shapes,
-                                                      feature_strides=self.kwargs['backbone_strides'],
-                                                      anchor_stride=self.kwargs['rpn_anchor_stride']
-                                                      )
-        if self.verbose:
-            print(f'Backbone shapes: {self.backbone_shapes}')
-            print(f'Anchors: {self.anchors.shape}')
+            self.backbone_shapes = utils.compute_backbone_shapes(self.kwargs)
+            self.anchors = utils.generate_pyramid_anchors(scales=self.kwargs['rpn_anchor_scales'],
+                                                          ratios=self.kwargs['rpn_anchor_ratios'],
+                                                          feature_shapes=self.backbone_shapes,
+                                                          feature_strides=self.kwargs['backbone_strides'],
+                                                          anchor_stride=self.kwargs['rpn_anchor_stride']
+                                                          )
+            if self.verbose:
+                print(f'\nBackbone shapes: {self.backbone_shapes}')
+                print(f'\nAnchors: {self.anchors.shape}')
 
     def get_points_from_annotation(self, annotation_key: str) -> Tuple[list, list]:
         """
@@ -299,7 +302,7 @@ class DataLoader(Sequence):
 
         self.name = name
         self.steps_per_epoch = self.__len__()
-        print(f'{self.name} DataLoader. Steps per epoch: {self.steps_per_epoch}')
+        print(f'\n{self.name} DataLoader. Steps per epoch: {self.steps_per_epoch}')
 
     def generate_batch(self, index: int):
         """
@@ -315,6 +318,7 @@ class DataLoader(Sequence):
                    'batch_gt_class_ids': (batch, max_gt_instances)
                    'batch_gt_boxes':     (batch, max_gt_instances, 4)
                    'batch_gt_masks':     (batch, w, h, max_gt_instances)
+                   'batch_rpn_rois':     (batch, n_of_rois, 4), optional
 
         """
         # Set batch size counter
@@ -438,8 +442,8 @@ class DataLoader(Sequence):
                 outputs.extend([batch_mrcnn_class_ids, batch_mrcnn_bbox, batch_mrcnn_mask])
 
         if self.cast_output:
-            inputs = [cast(x, 'float32') for x in inputs]
-            outputs = [cast(x, 'float32') for x in outputs]
+            inputs = [cast(x, set_type(x.dtype.name)) for x in inputs]
+            outputs = [cast(x, set_type(x.dtype.name)) for x in outputs]
 
         if self.return_original:
             inputs.extend([batch_original_imgs, batch_original_masks, batch_original_class_ids, batch_original_bboxes])
@@ -465,6 +469,23 @@ class DataLoader(Sequence):
         self.indexes = np.arange(len(self.dataset))
         if self.shuffle:
             np.random.shuffle(self.indexes)
+
+
+def set_type(s: str) -> str:
+    """
+    Move float and int types from 64 to 32 bits
+    Args:
+        s: str, data type name
+    Returns: str, new data type
+    """
+    mapping = {
+        'int64': 'int32',
+        'int32': 'int32',
+        'float32': 'float32',
+        'float64': 'float32'
+    }
+    s = mapping[s] if s in mapping.keys() else s
+    return s
 
 
 def get_input_preprocess(normalize: dict = None) -> img_album.Compose:

@@ -47,17 +47,18 @@ def train_model(model, train_dataset, val_dataset, config, weights_path=None, lo
         def gen():
             for inputs, outputs in _gen:
                 if config['use_rpn_rois']:
-                    batch_images, batch_images_meta, batch_rpn_match, batch_rpn_bbox,\
+                    batch_images, batch_images_meta, batch_rpn_match, batch_rpn_bbox, \
                     batch_gt_class_ids, batch_gt_boxes, batch_gt_masks = inputs
 
-                    yield batch_images, batch_images_meta, batch_rpn_match, batch_rpn_bbox,\
+                    yield batch_images, batch_images_meta, batch_rpn_match, batch_rpn_bbox, \
                           batch_gt_class_ids, batch_gt_boxes, batch_gt_masks
                 else:
                     batch_images, batch_images_meta, batch_rpn_match, batch_rpn_bbox, \
                     batch_gt_class_ids, batch_gt_boxes, batch_gt_masks, random_rois = inputs
 
-                    yield batch_images, batch_images_meta, batch_rpn_match, batch_rpn_bbox,\
+                    yield batch_images, batch_images_meta, batch_rpn_match, batch_rpn_bbox, \
                           batch_gt_class_ids, batch_gt_boxes, batch_gt_masks, random_rois
+
         return gen
 
     out_len = 7
@@ -139,6 +140,7 @@ def train_model(model, train_dataset, val_dataset, config, weights_path=None, lo
               verbose=True,
               use_multiprocessing=config['use_multiprocessing'],
               workers=config['workers'],
+              max_queue_size=int(config['queue_multiplier'] * config['batch_size']),
               )
 
 

@@ -6,6 +6,7 @@ Licensed under the MIT License (see LICENSE for details)
 Written by Waleed Abdulla
 """
 
+import argparse
 import os
 import shutil
 import time
@@ -19,8 +20,7 @@ import tqdm
 from preprocess import preprocess
 from pycocotools import mask as maskUtils
 # Download and install the Python COCO tools from https://github.com/waleedka/coco
-# That's a fork from the original https://github.com/pdollar/coco with a bug
-# fix for Python 3.
+# That's a fork from the original https://github.com/pdollar/coco with a bug fix for Python 3.
 # I submitted a pull request https://github.com/cocodataset/cocoapi/pull/50
 # If the PR is merged then use the original repo.
 # Note: Edit PythonAPI/Makefile and replace "python" with "python3".
@@ -519,3 +519,45 @@ def evaluate_coco(model, dataset, coco, eval_type="bbox", limit=0, image_ids=Non
     print("Prediction time: {}. Average {}/image".format(
         t_prediction, t_prediction / len(image_ids)))
     print("Total time: ", time.time() - t_start)
+
+
+def coco_parse_arguments() -> argparse.Namespace:
+    """
+    Parse arguments for COCO training
+    Args:
+        -backbone,         str, backbone name
+        -epochs,           int, number of epochs
+        -batch_size,       int, training batch size
+        -dataset_path,     str, path to COCO dataset
+        -checkpoints_path, str, path to store model checkpoints
+        -train_bn,         bool, train batch normalization, useful for batches > 1
+        -frozen_backbone,  bool, freeze backbone
+        -n_train_images,   int, n random images for training from train directory, for coco_minitrain.py
+        -n_val_images,     int, n random images for validation form val directory, for coco_minitrain.py
+        -image_size,       int, (optional, default: 256), image size, here images are supposed to be square by default
+        -rseed,            int, (optional, default: 42) random seed
+        -gpu_memory,       int, (optional, default: 4500) gpu memory limitation for tensorflow container, in Mb
+
+    Example:
+            $ python ./coco_minitrain.py -backbone=mobilenet -epochs=1 -batch_size=2 \
+              -dataset_path=/media/disk/coco2017 \
+              -checkpoints_path=/media/disk/cocomini \
+              -train_bn -frozen_backbone -n_train_images=1000 -n_val_images=100
+
+    :return: argparse.Namespace
+    """
+    parser = argparse.ArgumentParser(description='Argument parser for COCO training')
+    parser.add_argument('-backbone', metavar='backbone', type=str)
+    parser.add_argument('-epochs', metavar='epochs', type=int)
+    parser.add_argument('-batch_size', metavar='batch_size', type=int)
+    parser.add_argument('-dataset_path', metavar='dataset_path', type=str)
+    parser.add_argument('-checkpoints_path', metavar='checkpoints_path', type=str)
+    parser.add_argument('-train_bn', action='store_true')
+    parser.add_argument('-frozen_backbone', action='store_true')
+
+    parser.add_argument('-n_train_images', metavar='n_train_images', type=int, default=1000)
+    parser.add_argument('-n_val_images', metavar='n_val_images', type=int, default=100)
+    parser.add_argument('-image_size', metavar='image_size', type=int, default=256)
+    parser.add_argument('-rseed', metavar='rseed', type=int, default=42)
+    parser.add_argument('-gpu_memory', metavar='gpu_memory', type=int, default=4500)
+    return parser.parse_args()

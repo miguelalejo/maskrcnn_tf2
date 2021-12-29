@@ -1,8 +1,8 @@
 import efficientnet.keras as efn
 import numpy as np
 import tensorflow as tf
-from layers.backbones.models_factory import Classifiers
 from common import utils
+from layers.backbones.models_factory import Classifiers
 from tensorflow.keras import layers as tfl
 
 
@@ -22,8 +22,8 @@ class NormBoxesLayer(tfl.Layer):
 
     def __init__(self, name='norm_boxes', **kwargs):
         super(NormBoxesLayer, self).__init__(name=name, **kwargs)
-        self.shift = np.array((0., 0., 1., 1.))
-        self.const = np.array(1.0)
+        self.shift = tf.constant((0., 0., 1., 1.), dtype=tf.float32)
+        self.const = tf.constant(1.0, dtype=tf.float32)
 
     def build(self, input_shape):
         self.built = True
@@ -32,7 +32,7 @@ class NormBoxesLayer(tfl.Layer):
     def call(self, inputs, **kwargs):
         # assert inputs is tuple
         boxes, shape = inputs
-        h, w = tf.split(tf.cast(shape, tf.float32), 2)
+        h, w = tf.split(shape, 2)
         scale = tf.concat([h, w, h, w], axis=-1) - self.const
         return tf.math.divide(boxes - self.shift, scale)
 
@@ -542,7 +542,7 @@ class AnchorsLayer(tfl.Layer):
         super(AnchorsLayer, self).__init__(name=name, **kwargs)
         self.config = config
         self.training = training
-        self.image_shape = self.config['image_shape']
+        self.image_shape = np.array(self.config['image_shape'], dtype='float32')
         self.norm_boxes_layer = NormBoxesLayer(name='norm_boxes_anchors')
 
         self.anchors = self.get_anchors()
@@ -1037,9 +1037,10 @@ class PyramidROIAlign(tfl.Layer):
     constructor.
     """
 
-    def __init__(self, pool_shape, name='roi_align', **kwargs):
+    def __init__(self, pool_shape, denominator=244.0, name='roi_align', **kwargs):
         super(PyramidROIAlign, self).__init__(name=name, **kwargs)
         self.pool_shape = tuple(pool_shape)
+        self.denominator = denominator
 
     def build(self, input_shape):
         self.built = True
@@ -1067,7 +1068,7 @@ class PyramidROIAlign(tfl.Layer):
         # the fact that our coordinates are normalized here.
         # e.g. a 224x224 ROI (in pixels) maps to P4
         image_area = tf.cast(image_shape[0] * image_shape[1], tf.float32)
-        roi_level = utils.log2_graph(tf.sqrt(h * w) / (224.0 / tf.sqrt(image_area)))
+        roi_level = utils.log2_graph(tf.sqrt(h * w) / (self.denominator / tf.sqrt(image_area)))
         roi_level = tf.minimum(5, tf.maximum(
             2, 4 + tf.cast(tf.round(roi_level), tf.int32)))
         roi_level = tf.squeeze(roi_level, 2)
@@ -1076,7 +1077,7 @@ class PyramidROIAlign(tfl.Layer):
         pooled = []
         box_to_level = []
         # Workaround for onnxruntime which have issues with empty tensors concat because of the dimensions reorder.
-        unique_levels = tf.unique(tf.reshape(roi_level, (-1, )))[0]
+        unique_levels = tf.unique(tf.reshape(roi_level, (-1,)))[0]
         unique_levels_padded = tf.pad(unique_levels, tf.constant([[0, 4]]), constant_values=2)
         unique_levels_padded = tf.split(unique_levels_padded[:4], 4)
 
@@ -1108,11 +1109,11 @@ class PyramidROIAlign(tfl.Layer):
                 method="bilinear"))
 
         # Pack pooled features into one tensor
-        pooled = tf.concat(pooled, axis=0)[:tf.shape(boxes)[0]*tf.shape(boxes)[1]]
+        pooled = tf.concat(pooled, axis=0)[:tf.shape(boxes)[0] * tf.shape(boxes)[1]]
 
         # Pack box_to_level mapping into one array and add another
         # column representing the order of pooled boxes
-        box_to_level = tf.concat(box_to_level, axis=0)[:tf.shape(boxes)[0]*tf.shape(boxes)[1]]
+        box_to_level = tf.concat(box_to_level, axis=0)[:tf.shape(boxes)[0] * tf.shape(boxes)[1]]
 
         box_range = tf.expand_dims(tf.range(tf.shape(box_to_level)[0]), 1)
         box_to_level = tf.concat([tf.cast(box_to_level, tf.int32), box_range],
@@ -1143,7 +1144,7 @@ class PyramidROIAlign(tfl.Layer):
 @tf.keras.utils.register_keras_serializable()
 class FPNClassifier(tfl.Layer):
 
-    def __init__(self, pool_size, fc_layers_size, num_classes, train_bn, name='fpn_classifier', **kwargs):
+    def __init__(self, pool_size, fc_layers_size, num_classes, train_bn, name='fpn_classifier', act='relu', **kwargs):
         super(FPNClassifier, self).__init__(name=name, **kwargs)
         self.pool_size = pool_size
         self.fc_layers_size = fc_layers_size
@@ -1158,14 +1159,14 @@ class FPNClassifier(tfl.Layer):
 
         self.fpnclf_bn1 = tfl.BatchNormalization(trainable=train_bn, name='fpnclf_bn1')
         self.tdistr_bn1 = tfl.TimeDistributed(self.fpnclf_bn1, name='mrcnn_class_bn1')
-        self.fpnclf_relu1 = tfl.Activation('relu', name='fpnclf_relu1')
+        self.fpnclf_relu1 = tfl.Activation(act, name='fpnclf_relu1')
 
         self.fpnclf_conv2 = tfl.Conv2D(fc_layers_size, (1, 1), name='fpnclf_conv2')
         self.tdistr_conv2 = tfl.TimeDistributed(self.fpnclf_conv2, name="mrcnn_class_conv2")
 
         self.fpnclf_bn2 = tfl.BatchNormalization(trainable=train_bn, name='fpnclf_bn2')
         self.tdistr_bn2 = tfl.TimeDistributed(self.fpnclf_bn2, name='mrcnn_class_bn2')
-        self.fpnclf_relu2 = tfl.Activation('relu', name='fpnclf_relu2')
+        self.fpnclf_relu2 = tfl.Activation(act, name='fpnclf_relu2')
 
         # Classifier head
         self.mrcnn_class_logits_layer = tfl.TimeDistributed(tfl.Dense(num_classes), name='mrcnn_class_logits')
@@ -1211,7 +1212,7 @@ class FPNClassifier(tfl.Layer):
 @tf.keras.utils.register_keras_serializable()
 class FPNMaskLayer(tfl.Layer):
 
-    def __init__(self, pool_size, num_classes, train_bn, name='fpn_mask_layer', **kwargs):
+    def __init__(self, pool_size, num_classes, train_bn, name='fpn_mask_layer', act='relu', **kwargs):
         """Builds the computation graph of the mask head of Feature Pyramid Network.
 
         rois: [batch, num_rois, (y1, x1, y2, x2)] Proposal boxes in normalized
@@ -1222,6 +1223,8 @@ class FPNMaskLayer(tfl.Layer):
         pool_size: The width of the square feature map generated from ROI Pooling.
         num_classes: number of classes, which determines the depth of the results
         train_bn: Boolean. Train or freeze Batch Norm layers
+        name: str, name
+        act:  str, activation function
 
         Returns: Masks [batch, num_rois, MASK_POOL_SIZE, MASK_POOL_SIZE, NUM_CLASSES]
         """
@@ -1249,12 +1252,13 @@ class FPNMaskLayer(tfl.Layer):
         self.fpnmask_bn4 = tfl.BatchNormalization(trainable=train_bn, name='fpnmask_bn4')
         self.tdistr_bn4 = tfl.TimeDistributed(self.fpnmask_bn4, name='mrcnn_mask_bn4')
 
-        self.fpnmask_deconv = tfl.Conv2DTranspose(256, (2, 2), strides=2, activation="relu", name='fpnmask_convt')
+        self.fpnmask_deconv = tfl.Conv2DTranspose(256, (2, 2), strides=2, activation='relu', name='fpnmask_convt')
         self.tdistr_deconv = tfl.TimeDistributed(self.fpnmask_deconv, name="mrcnn_mask_deconv")
 
         self.fpn_conv_ = tfl.Conv2D(num_classes, (1, 1), strides=1, activation="sigmoid", name='fpn_conv_')
         self.tdistr_mrcnn_mask = tfl.TimeDistributed(self.fpn_conv_, name="mrcnn_mask")
 
+        self.act = tfl.Activation(act)
         self.relu = tfl.Activation('relu')
 
     def build(self, input_shape):
@@ -1266,13 +1270,13 @@ class FPNMaskLayer(tfl.Layer):
 
         x = self.roi_align([rois, image_meta] + feature_maps)
         x = self.tdistr_bn1(self.tdistr_conv1(x))
-        x = self.relu(x)
+        x = self.act(x)
 
         x = self.tdistr_bn2(self.tdistr_conv2(x))
         x = self.relu(x)
 
         x = self.tdistr_bn3(self.tdistr_conv3(x))
-        x = self.relu(x)
+        x = self.act(x)
 
         x = self.tdistr_bn4(self.tdistr_conv4(x))
         x = self.relu(x)
@@ -1876,7 +1880,7 @@ def fpn_classifier_graph(inputs, pool_size, fc_layers_size, num_classes, train_b
     x = get_relu(name='fpnclf_relu_act1', leaky=leaky_relu)(x)
 
     x = tdistr_bn2(tdistr_conv2(x))
-    x = get_relu(name='fpnclf_relu_act2', leaky=leaky_relu)(x) # -> [None, None, 1, 1, 1024]
+    x = get_relu(name='fpnclf_relu_act2', leaky=leaky_relu)(x)  # -> [None, None, 1, 1, 1024]
 
     # Fix for several backbones
     if training:
@@ -2059,10 +2063,10 @@ class MaskRCNNBackbone:
             model = _effnet_mapping[self.backbone_name](input_shape=self.input_shape,
                                                         weights=self.weights,
                                                         include_top=False)
-        elif 'resnet' in self.backbone_name or\
-                'resnext' in self.backbone_name or\
-                'seresnet' in self.backbone_name or\
-                'seresnext' in self.backbone_name or\
+        elif 'resnet' in self.backbone_name or \
+                'resnext' in self.backbone_name or \
+                'seresnet' in self.backbone_name or \
+                'seresnext' in self.backbone_name or \
                 'senet' in self.backbone_name:
 
             # ResNets, ResNeXts, SE-ResNets, SE-ResNeXt, SeNet

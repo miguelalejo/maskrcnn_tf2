@@ -11,6 +11,7 @@ import random
 from distutils.version import LooseVersion
 
 import numpy as np
+
 import skimage
 import skimage.transform
 import tensorflow as tf
@@ -150,7 +151,7 @@ def compute_overlaps(boxes1, boxes2):
     return overlaps
 
 
-def build_rpn_targets(anchors, gt_class_ids, gt_boxes, rpn_train_anchors_per_image, rpn_bbox_std):
+def build_rpn_targets(anchors, gt_class_ids, gt_boxes, rpn_train_anchors_per_image, rpn_bbox_std, eps=1e-3):
     """Given the anchors and GT boxes, compute overlaps and identify positive
     anchors and deltas to refine them to match their corresponding GT boxes.
 
@@ -251,8 +252,8 @@ def build_rpn_targets(anchors, gt_class_ids, gt_boxes, rpn_train_anchors_per_ima
         rpn_bbox[ix] = [
             (gt_center_y - a_center_y) / a_h,
             (gt_center_x - a_center_x) / a_w,
-            np.log(gt_h / (a_h + 1e-4)),
-            np.log(gt_w / (a_w + 1e-4)),
+            np.log(gt_h / (a_h + eps)),
+            np.log(gt_w / (a_w + eps)),
         ]
         # Normalize
         rpn_bbox[ix] /= rpn_bbox_std
@@ -344,8 +345,7 @@ def resize(image, output_shape, order=1, mode='constant', cval=0, clip=True,
     version. And it provides a central place to control resizing defaults.
     """
     if LooseVersion(skimage.__version__) >= LooseVersion("0.14"):
-        # New in 0.14: anti_aliasing. Default it to False for backward
-        # compatibility with skimage 0.13.
+        # New in 0.14: anti_aliasing. Default it to False for backward compatibility with skimage 0.13.
         return skimage.transform.resize(
             image, output_shape,
             order=order, mode=mode, cval=cval, clip=clip,
@@ -465,7 +465,7 @@ def resize_image(image, min_dim=None, max_dim=None, min_scale=None, mode="square
     return image.astype(image_dtype), window, scale, padding, crop
 
 
-def box_refinement(box, gt_box):
+def box_refinement(box, gt_box, eps=1e-3):
     """Compute refinement needed to transform box to gt_box.
     box and gt_box are [N, (y1, x1, y2, x2)]. (y2, x2) is
     assumed to be outside the box.
@@ -485,8 +485,8 @@ def box_refinement(box, gt_box):
 
     dy = (gt_center_y - center_y) / height
     dx = (gt_center_x - center_x) / width
-    dh = np.log(gt_height / height)
-    dw = np.log(gt_width / width)
+    dh = np.log(gt_height / (height + eps))
+    dw = np.log(gt_width / (width + eps))
 
     return np.stack([dy, dx, dh, dw], axis=1)
 
@@ -772,7 +772,7 @@ def batch_slice(inputs, graph_fn, batch_size, names=None):
     return result
 
 
-def box_refinement_graph(box, gt_box):
+def box_refinement_graph(box, gt_box, eps=1e-3):
     """Compute refinement needed to transform box to gt_box.
     box and gt_box are [N, (y1, x1, y2, x2)]
     """
@@ -791,8 +791,8 @@ def box_refinement_graph(box, gt_box):
 
     dy = (gt_center_y - center_y) / height
     dx = (gt_center_x - center_x) / width
-    dh = tf.math.log(gt_height / height)
-    dw = tf.math.log(gt_width / width)
+    dh = tf.math.log(gt_height / (height + eps))
+    dw = tf.math.log(gt_width / (width + eps))
 
     result = tf.stack([dy, dx, dh, dw], axis=1)
     return result
@@ -955,6 +955,30 @@ def unmold_mask(mask, bbox, image_shape):
     return full_mask
 
 
+def minimize_mask(bbox, mask, mini_shape):
+    """
+    Resize masks to a smaller version to cut memory load.
+    Mini-masks can then resized back to image scale using expand_masks()
+    See inspect_data.ipynb notebook for more details.
+    Args:
+        bbox:
+        mask:
+        mini_shape:
+    Returns: resized mask
+
+    """
+    mini_mask = np.zeros(mini_shape + (mask.shape[-1],), dtype=bool)
+    for i in range(mask.shape[-1]):
+        m = mask[:, :, i]
+        y1, x1, y2, x2 = bbox[i][:4]
+        m = m[y1:y2, x1:x2]
+        if m.size == 0:
+            raise Exception("Invalid bounding box with area of zero")
+        m = skimage.transform.resize(m.astype(float), mini_shape)
+        mini_mask[:, :, i] = np.where(m >= 128, 1, 0)
+    return mini_mask
+
+
 def tf_limit_gpu_memory(tf_library, mem_limit):
     # GPU memory limit
     GPUS = tf_library.config.experimental.list_physical_devices('GPU')
@@ -969,3 +993,6 @@ def tf_limit_gpu_memory(tf_library, mem_limit):
             # Virtual devices must be set before GPUs have been initialized
             print(e)
     print(f"""Physical GPU-devices: {tf.config.list_physical_devices('GPU')}""")
+
+
+

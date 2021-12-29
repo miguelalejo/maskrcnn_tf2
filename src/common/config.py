@@ -33,8 +33,8 @@ CONFIG = {
     'image_max_dim': 512,
     'image_resize_mode': 'square',
 
-    # If enabled, resizes instance masks to a smaller size to reduce
-    # memory load. Recommended when using high-resolution images.
+    # If enabled, resizes instance masks to a smaller size to reduce memory load.\
+    # Recommended when using high-resolution images.
     'use_mini_masks': False,
     'mini_mask_shape': (32, 32),
 
@@ -50,6 +50,7 @@ CONFIG = {
     'log_per_steps': 5,
     'use_multiprocessing': True,
     'workers': mp.cpu_count() // 2,
+    'queue_multiplier': 20,
 
     'callback': {
         # TensorBoard callback
@@ -147,6 +148,7 @@ CONFIG = {
 
     # L2 regularization param
     'weight_decay': 0.0002,
+    # Use it for batch sizes > 1
     'train_bn': False,
     'l2_reg_batchnorm': False,
 
@@ -170,6 +172,5 @@ CONFIG = {
     'frozen_rpn_model': False,
     'frozen_mask_head': False,
     'frozen_cls_head': False
-
 
 }
