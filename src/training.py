@@ -70,7 +70,7 @@ def train_model(model, train_dataset, val_dataset, config, weights_path=None, lo
 
     train_datagen = tf.data.Dataset.from_generator(generator=make_gen_callable(train_dataloader),
                                                    output_types=tuple(tf.float32 for _ in range(out_len)))
-    val_datagen = tf.data.Dataset.from_generator(generator=make_gen_callable(train_dataloader),
+    val_datagen = tf.data.Dataset.from_generator(generator=make_gen_callable(val_dataloader),
                                                  output_types=tuple(tf.float32 for _ in range(out_len)))
 
     train_datagen, val_datagen = train_datagen.repeat(), val_datagen.repeat()
