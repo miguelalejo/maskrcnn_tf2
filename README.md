@@ -1,5 +1,9 @@
 ## Mask-RCNN in Tensorflow v2  ##
 
+```
+Warning, maintaining this repo is temporarily frozen.
+```
+
 This repository is based on [matterport](https://github.com/matterport/Mask_RCNN) Mask-RCNN model implementation. The
 main things about the model were added from the original repository. The repo is an attempt to make Mask-RCNN model more
 transparent to researchers and more applicable in terms of inference optimization. Besides, new backbones were added in
