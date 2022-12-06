@@ -56,7 +56,11 @@ class SegmentationDataset:
             # Some versions of VIA may violate this rule
             remapped_annotation_dict = {}
             for k, v in self.annotation_dict.items():
-                remapped_annotation_dict.update({v['filename']: v})
+                try:
+                    remapped_annotation_dict.update({v['filename']: v})
+                except KeyError as e:
+                    print ('I got a KeyError - reason "%s"' % str(e))
+                    remapped_annotation_dict.update({v['file_name']: v})
             self.annotation_dict.clear()
             self.annotation_dict.update(remapped_annotation_dict)
         else:
